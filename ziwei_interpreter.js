@@ -1,75 +1,108 @@
 /**
- * ZiweiInterpreter - 紫微斗數解讀引擎 (v1.9 - Crisis Narratives Edition)
- * 升級重點：
- * 1. 深度整合 detectConflicts 產出的衝突數據。
- * 2. 產出「避險指南」而非單純的恐嚇文字。
+ * ZiweiInterpreter - 紫微大師解讀引擎 (v2.0 - Master Advisory Edition)
+ * 核心升級：
+ * 1. 實作「決策光譜」：不再只是吉凶，而是給予行為策略。
+ * 2. 實作「星曜四化對話」：將星曜特質與四化引動結合。
+ * 3. 實作「三層疊宮敘事」：將時間與空間的交會點講成故事。
  */
 
 const ZiweiInterpreter = {
   /**
-   * 1. 自我了解：先天生命藍圖
+   * 核心解讀函數：生成大師級解析報告
+   * @param {number} palaceIdx - 宮位索引
+   * @param {Object} fullData - 包含本、大、流、月
+   * @param {Object} dict - 大師詞庫
+   * @param {Object} analyzer - 分析引擎
    */
-  analyzeInnateSelf: function(staticChart, dict, analyzer) {
-    if (!staticChart) return null;
-    const lifeIdx = staticChart.palaces.findIndex(p => p.name === "命宮");
-    const bodyIdx = staticChart.palaces.findIndex(p => p.isBodyPalace);
-    const bodyPalace = staticChart.palaces[bodyIdx];
-    const patterns = analyzer.detectPatterns(lifeIdx, { staticChart });
-    const coreStars = staticChart.palaces[lifeIdx].stars.map(s => s.name.split('(')[0]);
+  interpretPalace: function(palaceIdx, fullData, dict, analyzer) {
+    if (!dict || !dict.palace_traits) return { summary: "數據缺失", advice: [] };
+    
+    const score = analyzer.getPalaceScore(palaceIdx, fullData);
+    const staticPalace = fullData.staticChart.palaces[palaceIdx];
+    const palaceName = staticPalace.name;
+    const traits = dict.palace_traits[palaceName] || dict.palace_traits["命宮"]; // Fallback to 命宮邏輯
+    
+    // 1. 決策光譜定位 (Decision Spectrum Mapping)
+    let decisionText = "";
+    if (score >= 85) decisionText = traits.spectrum["90"];
+    else if (score >= 65) decisionText = traits.spectrum["70"];
+    else if (score >= 45) decisionText = traits.spectrum["50"];
+    else decisionText = traits.spectrum["30"];
+
+    // 2. 體用重疊敘事 (The Narrative Bridge)
+    let narrative = "目前場域能量處於平衡狀態。";
+    if (fullData.yearlyLuck) {
+        const yPalace = fullData.yearlyLuck.palaces[palaceIdx];
+        const overlayKey = `流命疊本${yPalace.overlayOnRoot.replace('宮', '')}`;
+        narrative = dict.overlay_narratives?.[overlayKey] || 
+                    `今年此宮位疊在本命【${yPalace.overlayOnRoot}】，預示該領域將受到後天環境的強烈引動。`;
+    }
+
+    // 3. 星曜四化具體指南 (Star-Transformation Linkage)
+    let specificAdvice = [];
+    staticPalace.stars.forEach(s => {
+        const baseName = s.name.split('(')[0];
+        const adviceNode = dict.star_transformation_advice?.[baseName];
+        
+        if (adviceNode) {
+            if (s.name.includes("(祿)")) specificAdvice.push(`【${baseName}化祿】：${adviceNode.祿}`);
+            if (s.name.includes("(忌)")) specificAdvice.push(`【${baseName}化忌】：${adviceNode.忌}`);
+        }
+    });
+
+    // 若無四化引動，則提供基礎建議
+    if (specificAdvice.length === 0) {
+        specificAdvice = staticPalace.stars.map(s => `【${s.name}】：專注發揮其${s.brightness === '廟' ? '優勢' : '特質'}。`);
+    }
 
     return {
-      title: "先天特質鑑定",
-      coreIdentity: `您的原生命底以【${coreStars.join('、')}】為核心。`,
-      personality: patterns.length > 0 ? patterns[0].desc : "您的性格較為多元，展現出高度的適應性。",
-      bodyEffect: `身宮位於「${bodyPalace.name}」，代表您 35 歲後的行為重心將更趨向該宮位性質。`
+      title: `${palaceName} 深度諮詢`,
+      score: score,
+      decisionSpectrum: decisionText,
+      narrative: narrative,
+      starDirectives: specificAdvice,
+      summary: `${decisionText} ${narrative}`
     };
   },
 
   /**
-   * 2. 未來預測：三疊宮位與風險預警 (核心更新)
+   * 未來趨勢：預測風險與機遇的動態
    */
   predictFutureTrend: function(fullData, dict, analyzer) {
     const { yearlyLuck } = fullData;
     if (!yearlyLuck) return null;
 
     const conflicts = analyzer.detectConflicts(fullData);
-    const score = analyzer.getPalaceScore(yearlyLuck.yLifeIdx, fullData);
-    
-    // 尋找當前最危險的宮位
-    const tripleTaboo = conflicts.find(c => c.isTripleTaboo);
-    const seriousClash = conflicts.find(c => c.isClash && c.tabooLayers.length >= 2);
+    const lifeIdx = yearlyLuck.yLifeIdx;
+    const report = this.interpretPalace(lifeIdx, fullData, dict, analyzer);
 
-    let narrative = `【時空主旋律】：今年流年命宮疊在本命「${yearlyLuck.palaces[yearlyLuck.yLifeIdx].overlayOnRoot}」。`;
-    let riskNotice = "目前整體能量場尚算穩健，適合執行既定計畫。";
-
-    if (tripleTaboo) {
-      riskNotice = `⚠️ 【高危預警】：偵測到「三疊忌」發生在【${tripleTaboo.palaceName}】。這代表該領域今年承受三層時空壓力，最易發生「不可抗力」的變數。建議此期間在該事務上「靜止即是前進」，切莫進行重大決策。`;
-    } else if (seriousClash) {
-      riskNotice = `⚠️ 【能量對沖】：【${seriousClash.palaceName}】呈現祿忌沖。這預示著該領域今年會出現「先得後失」或「表面光鮮、內藏危機」的現象，務必見好就收，切忌貪勝。`;
-    }
+    // 偵測三疊忌或重大衝突
+    const crisis = conflicts.find(c => c.isTripleTaboo || (c.isClash && c.tabooLayers.length >= 2));
 
     return {
       yearLabel: `${yearlyLuck.year} ${yearlyLuck.stemBranch}年`,
-      score: score,
-      summary: narrative,
-      dynamicStatus: score >= 75 ? "勢如破竹" : score <= 40 ? "潛伏蓄勢" : "穩定運行",
-      crisisReport: riskNotice, // 產出具體的危機報告
-      advice: score < 50 ? "目前正值能量重整期，建議專注內部修煉，減少向外擴張。" : "目前動能充沛，適合啟動規劃已久的目標。"
+      mainTheme: report.narrative,
+      score: report.score,
+      strategy: report.decisionSpectrum,
+      warning: crisis ? `⚠️ 偵測到重大氣數衝突：在【${crisis.palaceName}】出現多重能量卡頓，建議該領域「以靜制動」。` : "目前推演路徑相對清晰，可大膽向前。"
     };
   },
 
   /**
-   * 3. 傳統宮位詳解
+   * 先天特質：解析靈魂藍圖
    */
-  interpretPalace: function(palaceIdx, fullData, dict, analyzer) {
-    const score = analyzer.getPalaceScore(palaceIdx, fullData);
-    const p = fullData.staticChart.palaces[palaceIdx];
-    const traits = dict.palace_traits?.[p.name] || {};
+  analyzeInnateSelf: function(staticChart, dict, analyzer) {
+    const lifeIdx = staticChart.palaces.findIndex(p => p.name === "命宮");
+    const bodyIdx = staticChart.palaces.findIndex(p => p.isBodyPalace);
+    const bodyPalace = staticChart.palaces[bodyIdx];
+    
+    // 獲取先天特質斷語
+    const baseAnalysis = this.interpretPalace(lifeIdx, { staticChart }, dict, analyzer);
 
     return {
-        summary: score >= 80 ? traits.high_score : score <= 35 ? traits.low_score : "能量穩定。",
-        score: score,
-        advice: p.stars.map(s => dict.star_advice?.[s.name.split('(')[0]] || "專注自我發展。")
+      identity: baseAnalysis.decisionSpectrum,
+      growthTip: `【身宮啟示】：您的身宮位於「${bodyPalace.name}」，代表您的人生「下半場」將由外部競爭轉向內在對${bodyPalace.name}價值的追求。`,
+      logic: "這份藍圖決定了您的基本反應模式，了解它即是命運的解脫。"
     };
   }
 };
