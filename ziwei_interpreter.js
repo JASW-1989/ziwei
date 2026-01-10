@@ -1,87 +1,76 @@
 /**
- * ZiweiInterpreter - 紫微斗數解讀引擎 (v1.4 - Absolute Clean Edition)
- * 此版本不包含任何 'import' 語句，確保在瀏覽器環境 100% 相容。
- * 所有依賴 (辭典與分析器) 皆透過參數注入。
+ * ZiweiInterpreter - 紫微斗數解讀引擎 (v1.9 - Crisis Narratives Edition)
+ * 升級重點：
+ * 1. 深度整合 detectConflicts 產出的衝突數據。
+ * 2. 產出「避險指南」而非單純的恐嚇文字。
  */
 
 const ZiweiInterpreter = {
   /**
-   * 生成單一宮位的綜合解析報告
-   * @param {number} palaceIdx - 宮位索引
-   * @param {Object} fullData - 包含 staticChart, decadeInfo, yearlyLuck 的完整資料
-   * @param {Object} dict - 外部傳入的 ziwei_dictionary.json
-   * @param {Object} analyzer - 外部傳入的 ZiweiAnalyzer 模組
+   * 1. 自我了解：先天生命藍圖
    */
-  interpretPalace: function(palaceIdx, fullData, dict, analyzer) {
-    if (!dict || !dict.palace_traits) {
-      return { summary: "數據異常：辭典未就緒。", advice: ["請確認辭典檔案載入狀態。"] };
-    }
-    
-    // 優先使用傳入的 analyzer
-    if (!analyzer || !analyzer.getPalaceScore) {
-      return { summary: "分析受阻：分析核心未就緒。", advice: [] };
-    }
+  analyzeInnateSelf: function(staticChart, dict, analyzer) {
+    if (!staticChart) return null;
+    const lifeIdx = staticChart.palaces.findIndex(p => p.name === "命宮");
+    const bodyIdx = staticChart.palaces.findIndex(p => p.isBodyPalace);
+    const bodyPalace = staticChart.palaces[bodyIdx];
+    const patterns = analyzer.detectPatterns(lifeIdx, { staticChart });
+    const coreStars = staticChart.palaces[lifeIdx].stars.map(s => s.name.split('(')[0]);
 
-    const score = analyzer.getPalaceScore(palaceIdx, fullData);
-    const palaceName = fullData.staticChart.palaces[palaceIdx].name;
-    const traits = dict.palace_traits[palaceName];
-    
-    let report = {
-      title: `${palaceName} 深度解析`,
-      score: score,
-      summary: "目前宮位能量場趨於平穩。",
-      advice: []
+    return {
+      title: "先天特質鑑定",
+      coreIdentity: `您的原生命底以【${coreStars.join('、')}】為核心。`,
+      personality: patterns.length > 0 ? patterns[0].desc : "您的性格較為多元，展現出高度的適應性。",
+      bodyEffect: `身宮位於「${bodyPalace.name}」，代表您 35 歲後的行為重心將更趨向該宮位性質。`
     };
-
-    if (traits) {
-      if (score >= 70) report.summary = traits.high || traits.high_score;
-      else if (score <= 40) report.summary = traits.low || traits.low_score;
-      else report.summary = "此領域能量平穩，適合按部就班發展。";
-    }
-
-    // 抓取星曜建議
-    if (dict.star_advice) {
-      fullData.staticChart.palaces[palaceIdx].stars.forEach(s => {
-        const baseName = s.name.split('(')[0];
-        if (dict.star_advice[baseName]) {
-          report.advice.push(dict.star_advice[baseName]);
-        }
-      });
-    }
-
-    return report;
   },
 
   /**
-   * 生成主題式交互關係報告
+   * 2. 未來預測：三疊宮位與風險預警 (核心更新)
    */
-  interpretInteraction: function(theme, fullData, dict, analyzer) {
-    if (!dict || !dict.interaction_traits) return { title: "數據缺失", details: ["尚未載入交互辭典。"] };
-    if (!analyzer || !analyzer.analyzeTheme) return { title: "分析受阻", details: ["分析引擎不支援交互運算。"] };
+  predictFutureTrend: function(fullData, dict, analyzer) {
+    const { yearlyLuck } = fullData;
+    if (!yearlyLuck) return null;
 
-    const rawData = analyzer.analyzeTheme(theme, fullData);
-    const themeTitleMap = { "couple": "感情與配偶對待", "family": "家庭與家宅磁場", "parent_child": "親子對待關係" };
+    const conflicts = analyzer.detectConflicts(fullData);
+    const score = analyzer.getPalaceScore(yearlyLuck.yLifeIdx, fullData);
     
-    let report = {
-      title: themeTitleMap[theme] || "主題分析",
-      details: []
+    // 尋找當前最危險的宮位
+    const tripleTaboo = conflicts.find(c => c.isTripleTaboo);
+    const seriousClash = conflicts.find(c => c.isClash && c.tabooLayers.length >= 2);
+
+    let narrative = `【時空主旋律】：今年流年命宮疊在本命「${yearlyLuck.palaces[yearlyLuck.yLifeIdx].overlayOnRoot}」。`;
+    let riskNotice = "目前整體能量場尚算穩健，適合執行既定計畫。";
+
+    if (tripleTaboo) {
+      riskNotice = `⚠️ 【高危預警】：偵測到「三疊忌」發生在【${tripleTaboo.palaceName}】。這代表該領域今年承受三層時空壓力，最易發生「不可抗力」的變數。建議此期間在該事務上「靜止即是前進」，切莫進行重大決策。`;
+    } else if (seriousClash) {
+      riskNotice = `⚠️ 【能量對沖】：【${seriousClash.palaceName}】呈現祿忌沖。這預示著該領域今年會出現「先得後失」或「表面光鮮、內藏危機」的現象，務必見好就收，切忌貪勝。`;
+    }
+
+    return {
+      yearLabel: `${yearlyLuck.year} ${yearlyLuck.stemBranch}年`,
+      score: score,
+      summary: narrative,
+      dynamicStatus: score >= 75 ? "勢如破竹" : score <= 40 ? "潛伏蓄勢" : "穩定運行",
+      crisisReport: riskNotice, // 產出具體的危機報告
+      advice: score < 50 ? "目前正值能量重整期，建議專注內部修煉，減少向外擴張。" : "目前動能充沛，適合啟動規劃已久的目標。"
     };
+  },
 
-    rawData.interactions.forEach(item => {
-      let analysisText = `【${item.desc}】：`;
-      if (item.data.length === 0) {
-        analysisText += "互動模式平淡，能量干擾較少。";
-      } else {
-        item.data.forEach(inf => {
-          const dictKey = theme === "parent_child" ? "parent_child" : theme === "couple" ? "couple" : "family";
-          const traitText = dict.interaction_traits[dictKey] ? dict.interaction_traits[dictKey][inf.type] : "存在特定的交互感應。";
-          analysisText += `[${inf.star}化${inf.type}] ${traitText} `;
-        });
-      }
-      report.details.push(analysisText);
-    });
+  /**
+   * 3. 傳統宮位詳解
+   */
+  interpretPalace: function(palaceIdx, fullData, dict, analyzer) {
+    const score = analyzer.getPalaceScore(palaceIdx, fullData);
+    const p = fullData.staticChart.palaces[palaceIdx];
+    const traits = dict.palace_traits?.[p.name] || {};
 
-    return report;
+    return {
+        summary: score >= 80 ? traits.high_score : score <= 35 ? traits.low_score : "能量穩定。",
+        score: score,
+        advice: p.stars.map(s => dict.star_advice?.[s.name.split('(')[0]] || "專注自我發展。")
+    };
   }
 };
 
