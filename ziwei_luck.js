@@ -1,24 +1,290 @@
 /**
- * ZiweiLuck - 紫微斗數動態推演引擎 (Luck Engine v1.5)
- * 負責：流年運算與三疊邏輯。
- * 嚴謹對齊：ZiweiEngine v5.1 & ZiweiDecade v1.1
+ * ZiweiLuck - 紫微斗數動態推演引擎 (Time Series Engine v5.0 - Config Driven)
+ * 核心升級：
+ * 1. [配置驅動]：所有權重分數 (Score) 與碰撞邏輯全數移至 Dictionary 配置。
+ * 2. [介面更新]：getYearlyLuck, getMonthlyLuck 需傳入 dict 以讀取配置。
  */
 
 import ZiweiEngine from './ziwei_engine.js';
 
+// 流年星曜規則 (此為天文規則，屬 Engine 層級，可保留於此或移至 Engine)
 const YEARLY_STAR_RULES = {
   luCun: { "甲": 2, "乙": 3, "丙": 5, "丁": 6, "戊": 5, "己": 6, "庚": 8, "辛": 9, "壬": 11, "癸": 0 },
-  kui: { "甲": 1, "乙": 0, "丙": 11, "丁": 11, "戊": 1, "己": 0, "庚": 1, "辛": 2, "壬": 3, "癸": 3 },
-  yue: { "甲": 7, "乙": 8, "丙": 9, "丁": 9, "戊": 7, "己": 8, "庚": 7, "辛": 6, "壬": 5, "癸": 5 },
-  ma: { "寅": 8, "午": 8, "戌": 8, "申": 2, "子": 2, "辰": 2, "巳": 11, "酉": 11, "丑": 11, "亥": 5, "卯": 5, "未": 5 },
+  kui: { "甲": 1, "乙": 0, "丙": 11, "丁": 11, "戊": 1, "己": 0, "庚": 1, "辛": 6, "壬": 3, "癸": 3 },
+  yue: { "甲": 7, "乙": 8, "丙": 9, "丁": 9, "戊": 7, "己": 8, "庚": 7, "辛": 2, "壬": 5, "癸": 5 },
   wenChang: { "甲": 5, "乙": 6, "丙": 8, "丁": 9, "戊": 11, "己": 0, "庚": 2, "辛": 5, "壬": 6, "癸": 8 },
-  wenQu: { "甲": 9, "乙": 8, "丙": 6, "丁": 5, "戊": 3, "己": 2, "庚": 0, "辛": 9, "壬": 8, "癸": 6 }
+  wenQu: { "甲": 9, "乙": 8, "丙": 6, "丁": 5, "戊": 3, "己": 2, "庚": 0, "辛": 9, "壬": 8, "癸": 6 },
+  ma: { "寅": 8, "午": 8, "戌": 8, "申": 2, "子": 2, "辰": 2, "巳": 11, "酉": 11, "丑": 11, "亥": 5, "卯": 5, "未": 5 }
 };
 
 const ZiweiLuck = {
   /**
-   * 輔助：西元年轉干支
+   * 1. 取得流年完整推演資料
+   * @param {number} targetYear
+   * @param {Object} staticChart
+   * @param {Object} decadeInfo
+   * @param {Object} dict - 新增：傳入辭典以讀取 scoring_config
    */
+  getYearlyLuck: function(targetYear, staticChart, decadeInfo, dict) {
+    const { stem, branch, branchIdx } = this.getYearToStemBranch(targetYear);
+    const yLifeIdx = branchIdx; // 太歲宮
+    const ySiHuaRules = this._getSiHuaMap(stem);
+    
+    const yNames = ["流命", "流兄", "流夫", "流子", "流財", "流疾", "流遷", "流友", "流官", "流田", "流福", "流父"];
+    const suiQianNames = ["歲建", "晦氣", "喪門", "貫索", "官符", "小耗", "大耗", "龍德", "白虎", "天德", "弔客", "病符"];
+
+    const starsLoc = this._calculateYearlyStars(stem, branch);
+
+    const luckPalaces = staticChart.palaces.map((p, idx) => {
+      const nameIdx = (yLifeIdx - idx + 12) % 12;
+      
+      const yStars = [];
+      if (idx === starsLoc.lu) yStars.push({ name: "流年祿存", type: "yearly_lu" });
+      if (idx === starsLoc.yang) yStars.push({ name: "流年擎羊", type: "yearly_malefic" });
+      if (idx === starsLoc.tuo) yStars.push({ name: "流年陀羅", type: "yearly_malefic" });
+      if (idx === starsLoc.kui) yStars.push({ name: "流年天魁", type: "yearly_lucky" });
+      if (idx === starsLoc.yue) yStars.push({ name: "流年天鉞", type: "yearly_lucky" });
+      if (idx === starsLoc.chang) yStars.push({ name: "流年文昌", type: "yearly_lucky" });
+      if (idx === starsLoc.qu) yStars.push({ name: "流年文曲", type: "yearly_lucky" });
+      if (idx === starsLoc.ma) yStars.push({ name: "流年天馬", type: "yearly_lucky" });
+      
+      const luanIdx = (3 - branchIdx + 12) % 12; // 簡單紅鸞查法
+      if (idx === luanIdx) yStars.push({ name: "流年紅鸞", type: "yearly_romance" });
+      if (idx === (luanIdx + 6) % 12) yStars.push({ name: "流年天喜", type: "yearly_romance" });
+
+      const dPalace = decadeInfo ? decadeInfo.palaces[idx] : null;
+      const suiQianIdx = (idx - branchIdx + 12) % 12;
+
+      return {
+        index: idx,
+        yearlyName: yNames[nameIdx],
+        overlayOnRoot: p.name,
+        overlayOnDecade: dPalace ? dPalace.decadeName : "未知",
+        yearlyStars: yStars,
+        suiQianStar: suiQianNames[suiQianIdx],
+        rootStars: p.stars,
+        decadeStars: dPalace ? dPalace.decadeStars : []
+      };
+    });
+
+    const sfIdx = this._getSanFangSiZhengIndices(yLifeIdx);
+    const sanFangSiZheng = sfIdx.map(idx => luckPalaces[idx]);
+    
+    // 傳入 dict 進行動態評分
+    const { siHuaPath, interactions } = this._analyzeTripleLayerInteractions(ySiHuaRules, luckPalaces, decadeInfo, dict);
+
+    return {
+      type: "Yearly",
+      year: targetYear,
+      stem: stem,
+      branch: branch,
+      stemBranch: `${stem}${branch}`,
+      yearLifeIdx: yLifeIdx,
+      palaces: luckPalaces,
+      sanFangSiZheng: sanFangSiZheng,
+      siHua: ySiHuaRules,
+      siHuaPath: siHuaPath,
+      interactions: interactions
+    };
+  },
+
+  /**
+   * 2. 取得流月推演資料
+   */
+  getMonthlyLuck: function(lunarMonth, yearlyLuck, birthInfo) {
+    if (!yearlyLuck || !birthInfo) return null;
+
+    const yearBranchIdx = ZiweiEngine.BRANCHES.indexOf(yearlyLuck.branch);
+    const birthMonth = birthInfo.month;
+    const birthHourIdx = birthInfo.hourIdx;
+    
+    // 計算斗君 (正月位置)
+    const douJunIdx = (yearBranchIdx - (birthMonth - 1) + birthHourIdx + 12) % 12;
+    const mLifeIdx = (douJunIdx + (lunarMonth - 1)) % 12;
+
+    // 五虎遁求月干
+    const monthStartStemMap = { "甲": 2, "己": 2, "乙": 4, "庚": 4, "丙": 6, "辛": 6, "丁": 8, "壬": 8, "戊": 0, "癸": 0 };
+    const yearStem = yearlyLuck.stem;
+    // 這裡使用簡化邏輯：流月天干取決於該宮位在當年的天干配置
+    const mStem = yearlyLuck.palaces[mLifeIdx].rootStars[0]?.stem || ZiweiEngine.getPalaceStems(yearStem)[mLifeIdx];
+    
+    const mSiHuaRules = this._getSiHuaMap(mStem);
+    const mNames = ["流月命", "流月兄", "流月夫", "流月子", "流月財", "流月疾", "流月遷", "流月友", "流月官", "流月田", "流月福", "流月父"];
+
+    const monthlyPalaces = yearlyLuck.palaces.map((p, idx) => {
+      const nameIdx = (mLifeIdx - idx + 12) % 12;
+      return {
+        index: idx,
+        monthlyName: mNames[nameIdx],
+        overlayOnYear: p.yearlyName,
+        overlayOnRoot: p.overlayOnRoot,
+        rootStars: p.rootStars,
+        yearlyStars: p.yearlyStars
+      };
+    });
+
+    const siHuaPath = {};
+    for (let type in mSiHuaRules) {
+      const star = mSiHuaRules[type];
+      const target = monthlyPalaces.find(p => p.rootStars.some(s => s.name.startsWith(star)));
+      siHuaPath[type] = {
+        star: star,
+        palace: target ? target.monthlyName : "未知",
+        overlayYear: target ? target.overlayOnYear : "未知"
+      };
+    }
+
+    return {
+      type: "Monthly",
+      lunarMonth: lunarMonth,
+      monthStem: mStem,
+      monthLifeIdx: mLifeIdx,
+      siHua: mSiHuaRules,
+      siHuaPath: siHuaPath,
+      palaces: monthlyPalaces
+    };
+  },
+
+  getDailyLuck: function(lunarDay, monthlyLuck, dayStem) {
+    if (!monthlyLuck) return null;
+    const mLifeIdx = monthlyLuck.monthLifeIdx;
+    const dLifeIdx = (mLifeIdx + (lunarDay - 1)) % 12;
+
+    let dSiHuaRules = null;
+    if (dayStem) {
+      dSiHuaRules = this._getSiHuaMap(dayStem);
+    }
+
+    const dNames = ["流日命", "流日兄", "流日夫", "流日子", "流日財", "流日疾", "流日遷", "流日友", "流日官", "流日田", "流日福", "流日父"];
+    const dailyPalaces = monthlyLuck.palaces.map((p, idx) => {
+      const nameIdx = (dLifeIdx - idx + 12) % 12;
+      return {
+        index: idx,
+        dailyName: dNames[nameIdx],
+        overlayOnMonth: p.monthlyName,
+        overlayOnYear: p.overlayOnYear,
+        rootStars: p.rootStars
+      };
+    });
+
+    return {
+      type: "Daily",
+      lunarDay: lunarDay,
+      dayLifeIdx: dLifeIdx,
+      dayStem: dayStem || "未輸入",
+      siHua: dSiHuaRules,
+      palaces: dailyPalaces
+    };
+  },
+
+  _calculateYearlyStars: function(stem, branch) {
+    const rules = YEARLY_STAR_RULES;
+    const lu = rules.luCun[stem];
+    return {
+      lu: lu,
+      yang: (lu + 1) % 12,
+      tuo: (lu - 1 + 12) % 12,
+      kui: rules.kui[stem],
+      yue: rules.yue[stem],
+      chang: rules.wenChang[stem],
+      qu: rules.wenQu[stem],
+      ma: rules.ma[branch]
+    };
+  },
+
+  _analyzeTripleLayerInteractions: function(yRules, luckPalaces, decadeInfo, dict) {
+    const siHuaPath = {};
+    const interactions = [];
+
+    for (let type in yRules) {
+      const starName = yRules[type];
+      const targetPalace = luckPalaces.find(p => 
+        p.rootStars.some(s => s.name.startsWith(starName))
+      );
+
+      if (targetPalace) {
+        siHuaPath[type] = {
+          star: starName,
+          impactRoot: targetPalace.overlayOnRoot,
+          impactDecade: targetPalace.overlayOnDecade,
+          impactYearly: targetPalace.yearlyName
+        };
+
+        const rootStar = targetPalace.rootStars.find(s => s.name.startsWith(starName));
+        if (rootStar) {
+          // 使用 transformation 屬性或後綴判斷
+          let rType = rootStar.transformation; 
+          if (!rType && rootStar.name.includes("(祿)")) rType = "祿";
+          if (!rType && rootStar.name.includes("(權)")) rType = "權";
+          if (!rType && rootStar.name.includes("(科)")) rType = "科";
+          if (!rType && rootStar.name.includes("(忌)")) rType = "忌";
+
+          if (rType) {
+            this._recordInteraction(interactions, type, `本命${rType}`, rType, starName, targetPalace, dict);
+          }
+        }
+
+        if (decadeInfo && decadeInfo.siHua) {
+          const dRules = decadeInfo.siHua;
+          for (let dType in dRules) {
+            if (dRules[dType] === starName) {
+              this._recordInteraction(interactions, type, `大限${dType}`, dType, starName, targetPalace, dict);
+            }
+          }
+        }
+      } else {
+        siHuaPath[type] = { star: starName, impactRoot: "未知", impactDecade: "未知", impactYearly: "未知" };
+      }
+    }
+    return { siHuaPath, interactions };
+  },
+
+  /**
+   * 核心修正：移除硬編碼分數，改讀 Config
+   */
+  _recordInteraction: function(list, yType, targetLayerName, targetType, star, palace, dict) {
+    let desc = "";
+    let score = 0;
+    
+    // 安全讀取配置
+    const scores = dict?.scoring_config?.resonance_scores || {
+       "double_lu": 20, "triple_lu": 35, "double_ji": -30, "triple_ji": -50, "lu_ji_clash": -15
+    };
+
+    if (yType === "祿" && targetType === "祿") { 
+        desc = "疊祿 (吉利加倍)"; 
+        score = scores.double_lu; 
+    }
+    else if (yType === "祿" && targetType === "忌") { 
+        desc = "祿入忌鄉 (吉處藏凶)"; 
+        score = scores.lu_ji_clash; 
+    }
+    else if (yType === "忌" && targetType === "祿") { 
+        desc = "忌沖祿 (運勢折損)"; 
+        score = scores.lu_ji_clash; // 可視情況區分
+    }
+    else if (yType === "忌" && targetType === "忌") { 
+        desc = "雙忌鎖定 (壓力極大)"; 
+        score = scores.double_ji; 
+    }
+    else if (yType === "權" && targetType === "權") { 
+        desc = "雙權獨斷"; 
+        score = 10; // 若配置無此項，則保留預設，或建議新增至字典
+    }
+    else { 
+        desc = `流年${yType} 遇 ${targetLayerName}`; 
+        score = 0; 
+    }
+
+    list.push({
+      star: star,
+      palace: palace.yearlyName,
+      desc: desc,
+      score: score,
+      yType, targetType
+    });
+  },
+
   getYearToStemBranch: function(year) {
     const stemIdx = (year - 4 + 12000000) % 10;
     const branchIdx = (year - 4 + 12000000) % 12;
@@ -30,62 +296,8 @@ const ZiweiLuck = {
     };
   },
 
-  /**
-   * 流年推演核心
-   * @param {number} targetYear - 西元年
-   * @param {Object} staticChart - 靜態本命盤數據 (ZiweiEngine產出)
-   * @param {Object} decadeInfo - 動態大限數據 (ZiweiDecade產出)
-   */
-  getYearlyLuck: function(targetYear, staticChart, decadeInfo = null) {
-    const { stem, branch, branchIdx } = this.getYearToStemBranch(targetYear);
-    const yLifeIdx = branchIdx;
-    const ySiHua = this._getSiHuaMap(stem);
-    const yNames = ["流命", "流兄", "流夫", "流子", "流財", "流疾", "流遷", "流友", "流官", "流田", "流福", "流父"];
-    const suiQianNames = ["歲建", "晦氣", "喪門", "貫索", "官符", "小耗", "大耗", "龍德", "白虎", "天德", "弔客", "病符"];
-
-    const luckPalaces = staticChart.palaces.map((p, idx) => {
-      const nameIdx = (yLifeIdx - idx + 12) % 12;
-      const yStars = [];
-      
-      // 1. 流年星曜計算
-      const lIdx = YEARLY_STAR_RULES.luCun[stem];
-      if (idx === lIdx) yStars.push({ name: "流年祿存", type: "yearly" });
-      if (idx === (lIdx + 1) % 12) yStars.push({ name: "流年擎羊", type: "yearly" });
-      if (idx === (lIdx - 1 + 12) % 12) yStars.push({ name: "流年陀羅", type: "yearly" });
-      if (idx === YEARLY_STAR_RULES.kui[stem]) yStars.push({ name: "流年天魁", type: "yearly" });
-      if (idx === YEARLY_STAR_RULES.yue[stem]) yStars.push({ name: "流年天鉞", type: "yearly" });
-      if (idx === YEARLY_STAR_RULES.ma[branch]) yStars.push({ name: "流年天馬", type: "yearly" });
-      if (idx === YEARLY_STAR_RULES.wenChang[stem]) yStars.push({ name: "流年文昌", type: "yearly" });
-      if (idx === YEARLY_STAR_RULES.wenQu[stem]) yStars.push({ name: "流年文曲", type: "yearly" });
-      
-      const yLuanIdx = (3 - branchIdx + 12) % 12;
-      if (idx === yLuanIdx) yStars.push({ name: "流年紅鸞", type: "yearly" });
-      if (idx === (yLuanIdx + 6) % 12) yStars.push({ name: "流年天喜", type: "yearly" });
-
-      // 2. 疊宮對接 (核心：與 ZiweiDecade 的 decadeName 對接)
-      let overlayOnDecade = "";
-      if (decadeInfo && decadeInfo.palaces) {
-        overlayOnDecade = decadeInfo.palaces[idx].decadeName;
-      }
-
-      return {
-        index: idx,
-        yearlyName: yNames[nameIdx],
-        overlayOnRoot: p.name,
-        overlayOnDecade: overlayOnDecade,
-        yearlyStars: yStars,
-        yearlySiHua: ySiHua,
-        suiQianStar: suiQianNames[(idx - branchIdx + 12) % 12]
-      };
-    });
-
-    return {
-      type: "Yearly",
-      year: targetYear,
-      stemBranch: `${stem}${branch}`,
-      palaces: luckPalaces,
-      siHua: ySiHua
-    };
+  _getSanFangSiZhengIndices: function(idx) {
+    return [idx, (idx + 4) % 12, (idx + 6) % 12, (idx + 8) % 12];
   },
 
   _getSiHuaMap: function(stem) {
