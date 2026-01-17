@@ -1,18 +1,20 @@
 /**
- * ZiweiDecade - 紫微斗數大限推演引擎 (Decade Engine v1.1)
- * 嚴謹對齊 ZiweiEngine v5.1 數據結構
+ * ZiweiDecade - 紫微斗數大限推演引擎 (Decade Engine v3.1 - Config Driven)
+ * 修正：
+ * 1. 傳入 dict 參數。
+ * 2. _recordInteraction 改讀取 scoring_config。
  */
 
-import ZiweiEngine from './ziwei_engine.js';
-
 const ZiweiDecade = {
-  /**
-   * 1. 取得大限資料
-   * @param {number} targetAge - 目標虛歲
-   * @param {Object} staticChart - ZiweiEngine.getFullChart 的回傳結果
-   */
-  getDecadeInfo: function(targetAge, staticChart) {
-    // 嚴謹對齊：使用 ageStart 進行數值比對
+  DECADE_STAR_RULES: {
+    luCun: { "甲": 2, "乙": 3, "丙": 5, "丁": 6, "戊": 5, "己": 6, "庚": 8, "辛": 9, "壬": 11, "癸": 0 },
+    kui: { "甲": 1, "乙": 0, "丙": 11, "丁": 11, "戊": 1, "己": 0, "庚": 1, "辛": 6, "壬": 3, "癸": 3 },
+    yue: { "甲": 7, "乙": 8, "丙": 9, "丁": 9, "戊": 7, "己": 8, "庚": 7, "辛": 2, "壬": 5, "癸": 5 },
+    wenChang: { "甲": 5, "乙": 6, "丙": 8, "丁": 9, "戊": 11, "己": 0, "庚": 2, "辛": 5, "壬": 6, "癸": 8 },
+    wenQu: { "甲": 9, "乙": 8, "丙": 6, "丁": 5, "戊": 3, "己": 2, "庚": 0, "辛": 9, "壬": 8, "癸": 6 }
+  },
+
+  getDecadeInfo: function(targetAge, staticChart, dict) {
     const decadeLifePalace = staticChart.palaces.find(p => 
       targetAge >= p.ageStart && targetAge <= (p.ageStart + 9)
     );
@@ -20,51 +22,134 @@ const ZiweiDecade = {
     if (!decadeLifePalace) return null;
 
     const dStem = decadeLifePalace.stem;
-    const dLifeIdx = decadeLifePalace.index; // 大限命宮所在的地支索引
-    const dSiHua = this.getSiHuaRules(dStem);
-
-    // 大限名稱定義
+    const dLifeIdx = decadeLifePalace.index;
+    const dSiHuaRules = this.getSiHuaRules(dStem);
     const dPalaceNames = ["大限命", "大限兄", "大限夫", "大限子", "大限財", "大限疾", "大限遷", "大限友", "大限官", "大限田", "大限福", "大限父"];
     
-    // 大限流曜規則 (依大限宮干起)
-    const luMap = { "甲": 2, "乙": 3, "丙": 5, "丁": 6, "戊": 5, "己": 6, "庚": 8, "辛": 9, "壬": 11, "癸": 0 };
-    const lIdx = luMap[dStem];
+    const starsLoc = this._calculateDecadeStars(dStem);
 
     const palaces = staticChart.palaces.map((p, idx) => {
-      // 計算相對於大限命宮的偏移量
       const nameIdx = (dLifeIdx - idx + 12) % 12;
-      const dStars = [];
+      const decadeName = dPalaceNames[nameIdx];
       
-      // 設置大限星曜
-      if (idx === lIdx) dStars.push({ name: "大限祿存", type: "decade" });
-      if (idx === (lIdx + 1) % 12) dStars.push({ name: "大限擎羊", type: "decade" });
-      if (idx === (lIdx - 1 + 12) % 12) dStars.push({ name: "大限陀羅", type: "decade" });
+      const dStars = [];
+      if (idx === starsLoc.lu) dStars.push({ name: "大限祿存", type: "decade_lu" });
+      if (idx === starsLoc.yang) dStars.push({ name: "大限擎羊", type: "decade_malefic" });
+      if (idx === starsLoc.tuo) dStars.push({ name: "大限陀羅", type: "decade_malefic" });
+      if (idx === starsLoc.kui) dStars.push({ name: "大限天魁", type: "decade_lucky" });
+      if (idx === starsLoc.yue) dStars.push({ name: "大限天鉞", type: "decade_lucky" });
+      if (idx === starsLoc.chang) dStars.push({ name: "大限文昌", type: "decade_lucky" });
+      if (idx === starsLoc.qu) dStars.push({ name: "大限文曲", type: "decade_lucky" });
 
       return {
-        index: idx, // 地支索引 (0-11)
-        decadeName: dPalaceNames[nameIdx],
-        overlayOnRoot: p.name, // 疊在本命哪一宮
+        index: idx,
+        decadeName: decadeName,
+        overlayOnRoot: p.name,
+        rootStars: p.stars,
         decadeStars: dStars,
-        decadeSiHua: dSiHua
+        palaceStem: p.stem,
+        palaceBranch: p.branch
       };
     });
+
+    const { siHuaPath, interactions } = this._analyzeSiHuaInteractions(dSiHuaRules, palaces, dict);
+    const sfIdx = this._getSanFangSiZhengIndices(dLifeIdx);
+    const sanFangSiZheng = sfIdx.map(idx => palaces[idx]);
 
     return {
       type: "Decade",
       targetAge: targetAge,
       decadeStem: dStem,
-      decadeRange: decadeLifePalace.ageRange,
+      decadeRange: decadeLifePalace.ageStart + "-" + (decadeLifePalace.ageStart + 9),
       decadeLifeIdx: dLifeIdx,
+      palaceAttribute: this._getPalaceAttribute(decadeLifePalace.stars),
       palaces: palaces,
-      siHua: dSiHua
+      sanFangSiZheng: sanFangSiZheng,
+      siHua: dSiHuaRules,
+      siHuaPath: siHuaPath,
+      interactions: interactions
     };
   },
 
-  /**
-   * 四化規則 (與 Engine 保持 100% 一致)
-   */
-  getSiHuaRules: function(stem) {
+  _calculateDecadeStars: function(stem) {
+    const rules = this.DECADE_STAR_RULES;
+    const lu = rules.luCun[stem];
     return {
+      lu: lu,
+      yang: (lu + 1) % 12,
+      tuo: (lu - 1 + 12) % 12,
+      kui: rules.kui[stem],
+      yue: rules.yue[stem],
+      chang: rules.wenChang[stem],
+      qu: rules.wenQu[stem]
+    };
+  },
+
+  _analyzeSiHuaInteractions: function(dRules, palaces, dict) {
+    const siHuaPath = {};
+    const interactions = [];
+
+    for (let type in dRules) {
+      const starName = dRules[type];
+      const targetPalace = palaces.find(p => 
+        p.rootStars.some(s => s.name.startsWith(starName))
+      );
+
+      if (targetPalace) {
+        siHuaPath[type] = {
+          star: starName,
+          targetPalaceName: targetPalace.overlayOnRoot,
+          targetDecadeName: targetPalace.decadeName
+        };
+
+        const rootStar = targetPalace.rootStars.find(s => s.name.startsWith(starName));
+        if (rootStar) {
+          let rType = rootStar.transformation;
+          if (!rType && rootStar.name.includes("(祿)")) rType = "祿";
+          if (!rType && rootStar.name.includes("(權)")) rType = "權";
+          if (!rType && rootStar.name.includes("(科)")) rType = "科";
+          if (!rType && rootStar.name.includes("(忌)")) rType = "忌";
+
+          if (rType) {
+             this._recordInteraction(interactions, type, rType, starName, targetPalace, dict);
+          }
+        }
+      } else {
+        siHuaPath[type] = { star: starName, targetPalaceName: "借星或未知", targetDecadeName: "未知" };
+      }
+    }
+    return { siHuaPath, interactions };
+  },
+
+  _recordInteraction: function(list, dType, rType, star, palace, dict) {
+    let desc = "";
+    let score = 0;
+    
+    // 安全讀取配置
+    const scores = dict?.scoring_config?.resonance_scores || {
+       "double_lu": 20, "triple_lu": 35, "double_ji": -30, "triple_ji": -50, "lu_ji_clash": -15
+    };
+
+    if (dType === "祿" && rType === "祿") { desc = "雙祿交流"; score = scores.double_lu; }
+    else if (dType === "祿" && rType === "忌") { desc = "祿逢沖破"; score = scores.lu_ji_clash; }
+    else if (dType === "忌" && rType === "祿") { desc = "雙忌沖祿"; score = scores.lu_ji_clash; }
+    else if (dType === "忌" && rType === "忌") { desc = "雙忌交加"; score = scores.double_ji; }
+    else if (dType === "權" && rType === "權") { desc = "權力加倍"; score = 15; }
+    else if (dType === "科" && rType === "科") { desc = "名聲顯赫"; score = 10; }
+    else { desc = `大限${dType}疊本命${rType}`; score = 0; }
+
+    list.push({
+      star: star,
+      palace: palace.decadeName,
+      rootPalace: palace.overlayOnRoot,
+      desc: desc,
+      score: score,
+      dType, rType
+    });
+  },
+
+  getSiHuaRules: function(stem) {
+    const rules = {
       "甲": { "祿": "廉貞", "權": "破軍", "科": "武曲", "忌": "太陽" },
       "乙": { "祿": "天機", "權": "天梁", "科": "紫微", "忌": "太陰" },
       "丙": { "祿": "天同", "權": "天機", "科": "文昌", "忌": "廉貞" },
@@ -75,7 +160,31 @@ const ZiweiDecade = {
       "辛": { "祿": "巨門", "權": "太陽", "科": "文曲", "忌": "文昌" },
       "壬": { "祿": "天梁", "權": "紫微", "科": "左輔", "忌": "武曲" },
       "癸": { "祿": "破軍", "權": "巨門", "科": "太陰", "忌": "貪狼" }
-    }[stem];
+    };
+    return rules[stem];
+  },
+
+  _getSanFangSiZhengIndices: function(idx) {
+    return [
+      idx,            // 命
+      (idx + 4) % 12,  // 財
+      (idx + 6) % 12,  // 遷
+      (idx + 8) % 12   // 官
+    ];
+  },
+
+  _getPalaceAttribute: function(stars) {
+    const starNames = stars.map(s => s.name);
+    if (starNames.some(s => s.includes("七殺") || s.includes("破軍") || s.includes("貪狼"))) {
+      return "變動開創型 (波動大，適合積極進取)";
+    }
+    if (starNames.some(s => s.includes("天府") || s.includes("天相") || s.includes("太陰") || s.includes("天梁"))) {
+      return "穩健守成型 (環境安定，宜積累資源)";
+    }
+    if (starNames.some(s => s.includes("紫微") || s.includes("太陽") || s.includes("武曲"))) {
+      return "權威主導型 (具備掌控力，適合建立體制)";
+    }
+    return "平穩型 (重心在於協調與適應)";
   }
 };
 
