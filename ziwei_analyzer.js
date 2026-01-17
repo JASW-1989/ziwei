@@ -1,184 +1,104 @@
 /**
- * NatalAnalyzer - 本命格局分析器 (Natal Essence v2.0 - Config Driven)
- * 修正：
- * 1. 移除 ANALYSIS_CONFIG 硬編碼。
- * 2. _calculateBaseScore 改讀取 dict.scoring_config。
+ * ZiweiAnalyzer - 紫微斗數分析系統總控 (v5.3 - Dependency Injection 版)
+ * 核心職責：協調本命(Natal)、趨勢(Trend)、應期(Flow)三大分析模組。
+ * * 【介面合約說明】
+ * 1. Natal 模組: analyze(staticChart, dict) -> { lifeScore, summary, patterns, ... }
+ * 2. Trend 模組: analyze(fullData, dict, natalResult) -> { strategy, theme: { desc }, ... }
+ * 3. Flow 模組: analyze(fullData, dict, decadeResult, natalResult) -> { resonanceRisk: [], ... }
  */
 
-const NatalAnalyzer = {
-  analyze: function(staticChart, dict) {
-    const lifePalaceIdx = staticChart.palaces.find(p => p.name === "命宮").index;
-    
-    // 1. 計算全盤宮位基礎能量分
-    const palaceScores = staticChart.palaces.map((p, idx) => ({
-      index: idx,
-      name: p.name,
-      score: this._calculateBaseScore(idx, staticChart, dict)
-    }));
+const ZiweiAnalyzer = {
+  /**
+   * 全方位分析入口
+   * @param {Object} modules - 外部注入的分析器實體容器 { Natal, Trend, Flow }
+   * @param {Object} fullData - 包含 { staticChart, decadeInfo, yearlyLuck, monthlyLuck }
+   * @param {Object} dict - 系統辭典資料 (JSON)
+   */
+  analyzeAll: function(modules, fullData, dict) {
+    // 解構注入的子分析器實體
+    const { Natal, Trend, Flow } = modules;
 
-    // 2. 判斷命宮格局
-    const patterns = this._checkPatternStability(lifePalaceIdx, dict, staticChart);
+    // 基礎邊界檢查
+    if (!fullData || !fullData.staticChart) {
+      return { error: "核心數據(staticChart)缺失，無法執行分析。" };
+    }
 
-    // 3. 提取性格關鍵字
-    const traits = this._extractTraits(lifePalaceIdx, staticChart, dict);
+    if (!Natal || !Trend || !Flow) {
+      return { error: "分析模組注入不完全，請檢查模組載入狀態。" };
+    }
 
+    // 1. 執行本命分析 (Base Layer)
+    // 職責：提取性格基因、計算宮位能量、判定先性格局
+    const natalResult = Natal.analyze(fullData.staticChart, dict);
+
+    // 2. 執行運限分析 (Trend Layer)
+    // 職責：十年大限運勢定位、疊宮主題、體用修正
+    // 連動邏輯：傳入 natalResult 供 TrendAnalyzer 判斷「身強/身弱」以修正策略
+    const decadeResult = fullData.decadeInfo ? 
+      Trend.analyze(fullData, dict, natalResult) : null;
+
+    // 3. 執行應期分析 (Flow Layer)
+    // 職責：流年事件觸發、三代忌星碰撞、月份動態
+    // 連動邏輯：傳入 decadeResult 與 natalResult 進行風險權重分級
+    const flowResult = fullData.yearlyLuck ? 
+      Flow.analyze(fullData, dict, decadeResult, natalResult) : null;
+
+    // 4. 整合各層級數據並合成決策建議
     return {
-      type: "Natal",
-      scores: palaceScores,
-      lifeScore: palaceScores.find(p => p.index === lifePalaceIdx).score,
-      patterns: patterns,
-      traits: traits,
-      summary: this._generateSummary(patterns, palaceScores)
+      metadata: {
+        version: "5.3-GrandMaster-DI-Standard",
+        timestamp: new Date().toISOString()
+      },
+      natal: natalResult,
+      trend: decadeResult,
+      flow: flowResult,
+      // 合成具備「體用辯證」邏輯的最終摘要
+      summary: this._synthesizeSummary(natalResult, decadeResult, flowResult)
     };
   },
 
-  _calculateBaseScore: function(palaceIdx, staticChart, dict) {
-    const relData = this._getRelationalData(palaceIdx, staticChart);
+  /**
+   * 跨層級綜合摘要生成
+   * 邏輯：體(本命) x 用(大限/流年) 的連動分析
+   */
+  _synthesizeSummary: function(n, d, f) {
+    let text = `【本命格局】：${n.summary}\n`;
     
-    // 讀取配置
-    const config = dict.scoring_config || {
-        base_score: 60,
-        brightness_modifiers: { "廟": 15, "旺": 10, "得": 5, "利": 2, "平": 0, "陷": -15 },
-        sihua_modifiers: { "祿": 10, "權": 8, "科": 5, "忌": -12 },
-        malefic_penalty: -5,
-        borrowed_star_rate: 0.7
-    };
-
-    let score = config.base_score; 
-
-    relData.forEach((p, rIdx) => {
-      // 權重：本宮(1.0), 對宮(0.8), 三方(0.4)
-      let multiplier = rIdx === 0 ? 1.0 : (rIdx === 1 ? 0.8 : 0.4);
+    // --- 邏輯連動層 A: 本命 vs 大限 ---
+    if (d) {
+      text += `【大限運勢】：目前行運策略為 ${d.strategy}，重點在於 ${d.theme.desc}。\n`;
       
-      p.stars.forEach(s => {
-        const cleanName = s.name.split('(')[0]; // 暫時保留兼容
-        
-        // 1. 亮度加分
-        let val = config.brightness_modifiers[s.brightness] || 0;
-        
-        // 2. 生年四化加分 (優先使用 transformation 屬性，兼容舊版後綴)
-        const trans = s.transformation || 
-                      (s.name.includes("(祿)") ? "祿" : 
-                       s.name.includes("(權)") ? "權" :
-                       s.name.includes("(科)") ? "科" :
-                       s.name.includes("(忌)") ? "忌" : null);
-
-        if (trans && config.sihua_modifiers[trans]) {
-            val += config.sihua_modifiers[trans];
-        }
-
-        // 3. 煞星扣分 (使用字典 malefic_interactions 的 key 來判斷)
-        if (dict.malefic_interactions && dict.malefic_interactions[cleanName]) {
-           val += config.malefic_penalty; 
-        } else if (["火星", "鈴星", "擎羊", "陀羅", "地空", "地劫"].includes(cleanName)) {
-           // Fallback
-           val += config.malefic_penalty;
-        }
-
-        if (s.isBorrowed) val *= config.borrowed_star_rate;
-        score += val * multiplier;
-      });
-    });
-
-    // 格局修正
-    const patterns = this._checkPatternStability(palaceIdx, dict, staticChart);
-    patterns.forEach(p => {
-      if (p.specialNote) score += p.bonus || 15;
-      else score += p.isBroken ? -10 : 15;
-    });
-
-    return Math.max(0, Math.min(100, Math.round(score)));
-  },
-
-  _checkPatternStability: function(palaceIdx, dict, staticChart) {
-    const relData = this._getRelationalData(palaceIdx, staticChart);
-    const allStars = relData.flatMap(p => p.stars.map(s => s.name.split('(')[0])); 
-    const mainBranch = relData[0].branch;
-    
-    // 煞星清單：優先從字典獲取
-    const maleficList = dict.malefic_interactions ? Object.keys(dict.malefic_interactions) : ["火星", "鈴星", "擎羊", "陀羅", "地空", "地劫"];
-    const maleficNames = relData.flatMap(p => p.stars.filter(s => maleficList.includes(s.name.split('(')[0])).map(s => s.name.split('(')[0]));
-
-    let activePatterns = [];
-    const combinedLogic = dict.combined_star_logic || {};
-
-    for (let key in combinedLogic) {
-      const required = key.split('-');
-      if (required.every(s => allStars.includes(s))) {
-        let def = combinedLogic[key];
-
-        if (def.check_logic && !def.check_logic.includes(mainBranch) && def.check_logic[0] !== "三方四正") {
-          continue;
-        }
-
-        let stability = 100;
-        let specialNote = null;
-        let bonus = 0;
-
-        if (required.includes("貪狼")) {
-          if (maleficNames.includes("火星")) { stability += 20; specialNote = "火貪格加成"; bonus = 30; }
-          if (maleficNames.includes("鈴星")) { stability += 15; specialNote = "鈴貪格加成"; bonus = 25; }
-        }
-        if (mainBranch === "午" && maleficNames.includes("擎羊")) {
-           specialNote = "馬頭帶劍加成"; bonus = 40;
-        }
-
-        if (!specialNote) {
-          stability -= (maleficNames.length * 15);
-        }
-
-        activePatterns.push({
-          key,
-          name: def.name,
-          traits: def.traits,
-          pro_advice: def.pro_advice,
-          stability: Math.max(0, stability),
-          isBroken: stability < 50,
-          specialNote,
-          bonus
-        });
+      // 體用平衡檢測：命弱運強 (虛不受補)
+      if (n.lifeScore < 65 && d.strategy.includes("主攻")) {
+        text += `⚠️ 戰略修正：考量本命底氣稍弱（${n.lifeScore}分），建議將大限「主攻」調整為「穩健推進」，防範過度擴張導致的後勁不足。\n`;
+      }
+      
+      // 體用平衡檢測：命強運弱 (潛龍勿用)
+      if (n.lifeScore > 80 && d.strategy.includes("防守")) {
+        text += `💡 戰略修正：本命格局強健（${n.lifeScore}分），目前雖處於防守期，但具備極佳的抗壓與優化能力，適合進行內部系統性的升級。\n`;
       }
     }
-    return activePatterns;
-  },
 
-  _extractTraits: function(idx, staticChart, dict) {
-    const palace = staticChart.palaces[idx];
-    const traits = [];
-    const majors = dict.star_traits ? Object.keys(dict.star_traits) : [];
-    
-    palace.stars.forEach(s => {
-        const clean = s.name.split('(')[0];
-        if (majors.includes(clean)) {
-            traits.push(clean);
+    // --- 邏輯連動層 B: 大限 vs 流年 (應期判斷) ---
+    if (f && d) {
+      if (f.resonanceRisk && f.resonanceRisk.length > 0) {
+        text += `【流年警示】：本年偵測到 ${f.resonanceRisk.length} 個結構性高風險宮位。\n`;
+        
+        // 應期引動檢測：流年凶星是否引動了大限的隱憂
+        const isDecadeRiskTriggered = f.resonanceRisk.some(r => r.desc && r.desc.includes("大限忌"));
+        if (isDecadeRiskTriggered) {
+           text += `🛑 嚴重警告：流年凶星已引動大限之因果樞紐，屬「應期」已至，請務必針對風險宮位採取強制避險措施。\n`;
         }
-    });
-
-    if (traits.length === 0) return ["善變", "適應力強", "易受環境影響"];
-    return traits; 
-  },
-
-  _generateSummary: function(patterns, scores) {
-    const avg = scores.reduce((a, b) => a + b.score, 0) / 12;
-    const strong = patterns.some(p => !p.isBroken);
-    return `平均能量 ${avg.toFixed(1)}，${strong ? "格局成形，具備核心競爭力" : "格局較為鬆散，需後天努力補強"}。`;
-  },
-
-  _getRelationalData: function(palaceIdx, staticChart) {
-    const relations = [palaceIdx, (palaceIdx + 6) % 12, (palaceIdx + 4) % 12, (palaceIdx + 8) % 12];
-    return relations.map(idx => {
-      let p = { ...staticChart.palaces[idx] };
-      // 借星處理 (簡單判定：若無主星則借對宮)
-      // 注意：這裡假設 Engine 的資料結構，若要更嚴謹需判斷 type='major'
-      const hasMajor = p.stars.some(s => s.type === 'major');
-      
-      if (!hasMajor) {
-        const opp = staticChart.palaces[(idx + 6) % 12];
-        p.stars = opp.stars.map(s => ({ ...s, isBorrowed: true }));
+      } else {
+        // 吉向連動
+        if (d.strategy.includes("主攻")) {
+          text += `✅ 流年利好：本年外部環境平穩，無重大衝突星曜干擾，有利於全力推進大限之擴張計畫。\n`;
+        }
       }
-      return p;
-    });
+    }
+    
+    return text;
   }
 };
 
-export default NatalAnalyzer;
+export default ZiweiAnalyzer;
