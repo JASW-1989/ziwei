@@ -1,9 +1,8 @@
 /**
- * ZiweiEngine - 紫微斗數靜態核心引擎 (v8.1 - Professional Refinement Edition)
- * 修正重點：
- * 1. [命名一致性]：統一 bureauValue、lunarMonth 等參數命名，確保跨函數呼叫的一致性。
- * 2. [子時進位]：明確處理晚子時日期進位邏輯，確保與農曆轉換庫對接時的嚴謹。
- * 3. [結構優化]：強化安星 Helper 的物件結構，確保資料 schema 完整。
+ * ZiweiEngine - 紫微斗數靜態核心引擎 (v8.2 - Fixed & Extended)
+ * 修正記錄：
+ * 1. [新增] 乙級星曜邏輯：紅鸞、天喜、天刑、天姚、孤辰、寡宿。
+ * 2. [定義] 擴充 STAR_DEFINITIONS 支援乙級星。
  */
 
 const ZiweiEngine = {
@@ -22,6 +21,7 @@ const ZiweiEngine = {
 
   // 星曜基本屬性定義 (Key-based)
   STAR_DEFINITIONS: {
+    // 14 主星
     "紫微": { element: "土", type: "major" }, "天機": { element: "木", type: "major" },
     "太陽": { element: "火", type: "major" }, "武曲": { element: "金", type: "major" },
     "天同": { element: "水", type: "major" }, "廉貞": { element: "火", type: "major" },
@@ -29,13 +29,19 @@ const ZiweiEngine = {
     "貪狼": { element: "木", type: "major" }, "巨門": { element: "水", type: "major" },
     "天相": { element: "水", type: "major" }, "天梁": { element: "土", type: "major" },
     "七殺": { element: "金", type: "major" }, "破軍": { element: "水", type: "major" },
+    // 吉星
     "文昌": { element: "金", type: "lucky" }, "文曲": { element: "水", type: "lucky" },
     "左輔": { element: "土", type: "lucky" }, "右弼": { element: "水", type: "lucky" },
     "天魁": { element: "火", type: "lucky" }, "天鉞": { element: "火", type: "lucky" },
     "祿存": { element: "土", type: "lucky" }, "天馬": { element: "火", type: "lucky" },
+    // 煞星
     "擎羊": { element: "金", type: "malefic" }, "陀羅": { element: "金", type: "malefic" },
     "火星": { element: "火", type: "malefic" }, "鈴星": { element: "火", type: "malefic" },
-    "地空": { element: "火", type: "malefic" }, "地劫": { element: "火", type: "malefic" }
+    "地空": { element: "火", type: "malefic" }, "地劫": { element: "火", type: "malefic" },
+    // 新增乙級/雜曜
+    "紅鸞": { element: "水", type: "romance" }, "天喜": { element: "水", type: "romance" },
+    "天姚": { element: "水", type: "minor_malefic" }, "天刑": { element: "火", type: "minor_malefic" },
+    "孤辰": { element: "火", type: "minor_malefic" }, "寡宿": { element: "火", type: "minor_malefic" }
   },
 
   BRIGHTNESS_DB: {
@@ -126,6 +132,9 @@ const ZiweiEngine = {
   _getStarMapping: function(ziweiIdx, input, lunarMonth) {
     const starPalaces = Array(12).fill(null).map(() => []);
     const { yearStem, yearBranch, hourIdx } = input;
+    
+    // 將 yearBranch 轉為 index (0-11)
+    const yearBranchIdx = this.BRANCHES.indexOf(yearBranch);
 
     // 定義安星 Helper
     const addStar = (idx, starName) => {
@@ -155,6 +164,10 @@ const ZiweiEngine = {
     // --- C. 月系星 (使用有效月份 lunarMonth) ---
     addStar(4 + (lunarMonth - 1), "左輔");
     addStar(10 - (lunarMonth - 1) + 12, "右弼");
+    // [新增] 天刑: 酉宮(9)起正月，順行
+    addStar(9 + (lunarMonth - 1), "天刑");
+    // [新增] 天姚: 丑宮(1)起正月，順行
+    addStar(1 + (lunarMonth - 1), "天姚");
 
     // --- D. 時系星 ---
     addStar(4 + hourIdx, "文曲");
@@ -199,13 +212,32 @@ const ZiweiEngine = {
     });
 
     // --- F. 年支系星 ---
+    // 火鈴 (依年支 + 時支)
     const fireBase = { "寅": 1, "午": 1, "戌": 1, "申": 2, "子": 2, "辰": 2, "巳": 3, "酉": 3, "丑": 3, "亥": 9, "卯": 9, "未": 9 };
     const bellBase = { "寅": 3, "午": 3, "戌": 3, "申": 10, "子": 10, "辰": 10, "巳": 10, "酉": 10, "丑": 10, "亥": 10, "卯": 10, "未": 10 };
     addStar(fireBase[yearBranch] + hourIdx, "火星");
     addStar(bellBase[yearBranch] + hourIdx, "鈴星");
 
+    // 天馬 (依年支)
     const maMap = { "寅": 8, "午": 8, "戌": 8, "申": 2, "子": 2, "辰": 2, "巳": 11, "酉": 11, "丑": 11, "亥": 5, "卯": 5, "未": 5 };
     addStar(maMap[yearBranch], "天馬");
+
+    // [新增] 紅鸞/天喜: 卯(3)起子年，逆行
+    // 公式: (3 - yearBranchIdx + 12) % 12
+    const luanIdx = (3 - yearBranchIdx + 12) % 12;
+    addStar(luanIdx, "紅鸞");
+    addStar(luanIdx + 6, "天喜"); // 天喜必在對宮
+
+    // [新增] 孤辰/寡宿 (三會方局)
+    // 亥子丑(水) -> 寅/戌, 寅卯辰(木) -> 巳/丑, 巳午未(火) -> 申/辰, 申酉戌(金) -> 亥/未
+    let guIdx, guaIdx;
+    if (["亥", "子", "丑"].includes(yearBranch)) { guIdx = 2; guaIdx = 10; } // 寅, 戌
+    else if (["寅", "卯", "辰"].includes(yearBranch)) { guIdx = 5; guaIdx = 1; } // 巳, 丑
+    else if (["巳", "午", "未"].includes(yearBranch)) { guIdx = 8; guaIdx = 4; } // 申, 辰
+    else { guIdx = 11; guaIdx = 7; } // 申酉戌 -> 亥, 未
+
+    addStar(guIdx, "孤辰");
+    addStar(guaIdx, "寡宿");
 
     return starPalaces;
   },
