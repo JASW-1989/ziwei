@@ -1,17 +1,16 @@
 /**
- * ZiweiDecade - 紫微斗數大限推演引擎 (Decade Engine v3.1 - Config Driven)
+ * ZiweiDecade - 紫微斗數大限推演引擎 (Decade Engine v3.2 - Standardized)
  * 修正：
- * 1. 傳入 dict 參數。
- * 2. _recordInteraction 改讀取 scoring_config。
+ * 1. [移除] 大限文昌、文曲的排星邏輯 (昌曲為時系星，不隨大限天干移動)。
+ * 2. [保留] 大限羊陀、祿存、魁鉞邏輯。
  */
 
 const ZiweiDecade = {
   DECADE_STAR_RULES: {
     luCun: { "甲": 2, "乙": 3, "丙": 5, "丁": 6, "戊": 5, "己": 6, "庚": 8, "辛": 9, "壬": 11, "癸": 0 },
     kui: { "甲": 1, "乙": 0, "丙": 11, "丁": 11, "戊": 1, "己": 0, "庚": 1, "辛": 6, "壬": 3, "癸": 3 },
-    yue: { "甲": 7, "乙": 8, "丙": 9, "丁": 9, "戊": 7, "己": 8, "庚": 7, "辛": 2, "壬": 5, "癸": 5 },
-    wenChang: { "甲": 5, "乙": 6, "丙": 8, "丁": 9, "戊": 11, "己": 0, "庚": 2, "辛": 5, "壬": 6, "癸": 8 },
-    wenQu: { "甲": 9, "乙": 8, "丙": 6, "丁": 5, "戊": 3, "己": 2, "庚": 0, "辛": 9, "壬": 8, "癸": 6 }
+    yue: { "甲": 7, "乙": 8, "丙": 9, "丁": 9, "戊": 7, "己": 8, "庚": 7, "辛": 2, "壬": 5, "癸": 5 }
+    // 移除 wenChang, wenQu，標準斗數不飛動昌曲
   },
 
   getDecadeInfo: function(targetAge, staticChart, dict) {
@@ -38,8 +37,7 @@ const ZiweiDecade = {
       if (idx === starsLoc.tuo) dStars.push({ name: "大限陀羅", type: "decade_malefic" });
       if (idx === starsLoc.kui) dStars.push({ name: "大限天魁", type: "decade_lucky" });
       if (idx === starsLoc.yue) dStars.push({ name: "大限天鉞", type: "decade_lucky" });
-      if (idx === starsLoc.chang) dStars.push({ name: "大限文昌", type: "decade_lucky" });
-      if (idx === starsLoc.qu) dStars.push({ name: "大限文曲", type: "decade_lucky" });
+      // 移除 大限昌曲 push
 
       return {
         index: idx,
@@ -79,9 +77,8 @@ const ZiweiDecade = {
       yang: (lu + 1) % 12,
       tuo: (lu - 1 + 12) % 12,
       kui: rules.kui[stem],
-      yue: rules.yue[stem],
-      chang: rules.wenChang[stem],
-      qu: rules.wenQu[stem]
+      yue: rules.yue[stem]
+      // 移除 chang, qu
     };
   },
 
