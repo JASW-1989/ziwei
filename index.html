@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>紫微斗數深度決策戰情室</title>
+    
+    <!-- 1. 基礎依賴 -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Recharts UMD 依賴 Prop-types -->
+    <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
+    
+    <!-- 2. Recharts (圖表庫) - 使用 2.10.3 穩定版 -->
+    <script src="https://unpkg.com/recharts@2.10.3/umd/Recharts.js"></script>
+
+    <!-- 3. 工具 -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body { background-color: #020617; color: #e2e8f0; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        
+        // --- 核心修正：繞過 Babel 的 import 轉譯 ---
+        const nativeImport = (url) => {
+            return new Function(`return import("${url}")`)();
+        };
+
+        // 確保 Recharts 載入
+        if (!window.Recharts) {
+            throw new Error("Recharts library failed to load.");
+        }
+        const { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } = window.Recharts;
+        const RadarArea = window.Recharts.Radar;
+
+        // 手動定義 Icons 避免 CDN 延遲問題
+        const Icons = {
+            CloudLightning: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6"><path d="M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 .5 8.973"/><path d="m13 12-3 5h4l-3 5"/></svg>,
+            Loader2: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>,
+            Send: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>,
+            Settings: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>,
+            Wifi: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>,
+            Calendar: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>,
+            RotateCcw: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>,
+            ArrowLeft: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>,
+            User: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+            Activity: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>,
+            Shield: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+            Crosshair: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/></svg>,
+            ArrowRight: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>,
+            BookOpen: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>,
+            Sparkles: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M9 3v4"/><path d="M3 9h4"/><path d="M3 5h4"/></svg>,
+            AlertTriangle: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>,
+            CloudLightning: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 .5 8.973"/><path d="m13 12-3 5h4l-3 5"/></svg>
+        };
+
+        const REMOTE_BASE_URL = "https://jasw-1989.github.io/ziwei";
+
+        // ==========================================
+        // UI Components
+        // ==========================================
+
+        const PalaceCard = ({ palace, isSelected, onClick, layers, activeRisks }) => {
+            const isLife = palace.name === "命宮";
+            const risk = activeRisks?.find(r => r.palace === palace.name);
+
+            return (
+                <div onClick={onClick} className={`relative p-2 border transition-all cursor-pointer h-full flex flex-col justify-between overflow-hidden group ${isSelected ? 'border-blue-500 ring-2 ring-blue-500/50 bg-slate-800' : 'border-slate-700 bg-slate-900/50 hover:bg-slate-800'} ${risk?.type.includes('JI') ? 'bg-red-950/30 border-red-800/60' : ''} ${risk?.type.includes('LU') ? 'bg-green-950/30 border-green-800/60' : ''}`}>
+                    {risk && (
+                        <div className={`absolute top-0 right-0 px-2 py-0.5 text-[9px] font-bold z-10 shadow-sm backdrop-blur-sm ${risk.type.includes('JI') ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>
+                            {risk.type === 'TRIPLE_JI' ? '🛑 三忌' : risk.type === 'DOUBLE_JI' ? '⚠️ 雙忌' : '💰 雙祿'}
+                        </div>
+                    )}
+                    <div className="flex justify-between items-end border-b border-slate-700 pb-1 mb-1 shrink-0">
+                        <span className="text-[10px] text-slate-500 font-mono">{palace.stem}{palace.branch}</span>
+                        <span className={`font-bold ${isLife ? 'text-yellow-400 text-sm' : 'text-slate-200 text-xs'}`}>{palace.name}</span>
+                    </div>
+                    <div className="flex-1 overflow-y-auto space-y-0.5 scrollbar-thin scrollbar-thumb-slate-700 pr-1">
+                        {layers.natal && palace.stars.map((s, i) => (
+                            <div key={`n-${i}`} className={`text-[10px] flex justify-between items-center leading-tight ${s.transformation === '忌' ? 'text-red-400 font-bold' : s.transformation === '祿' ? 'text-green-400 font-bold' : s.type === 'major' ? 'text-red-200' : 'text-slate-400'}`}>
+                                <span className="truncate">{s.name.split('(')[0]}</span>
+                                {s.transformation && <span className={`text-[8px] px-1 rounded-full ${s.transformation==='忌'?'bg-red-600 text-white':s.transformation==='祿'?'bg-green-600 text-white':'bg-slate-700 text-slate-300'}`}>{s.transformation}</span>}
+                            </div>
+                        ))}
+                    </div>
+                    <div className="mt-1 pt-1 border-t border-slate-800 flex justify-between text-[8px] text-slate-600 shrink-0">
+                        <span>{palace.ageStart}-{palace.ageStart+9}</span>
+                    </div>
+                </div>
+            );
+        };
+
+        const TacticalMap = ({ report }) => {
+            if (!report || !report.tactical_map) return null;
+            const { attack_point, defense_point, safe_haven } = report.tactical_map;
+            // 防禦：如果沒有數據，顯示 placeholder
+            const radarData = report.radarData || [{subject:'無資料', A:0}];
+
+            return (
+                <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 h-full flex flex-col">
+                    <h3 className="text-slate-300 font-bold mb-3 flex items-center gap-2 text-xs uppercase tracking-wider">
+                        <Icons.Crosshair /> 戰術地圖
+                    </h3>
+                    <div className="space-y-3 flex-1 overflow-y-auto pr-1">
+                        <div className="bg-green-950/30 border border-green-800/40 p-2 rounded">
+                            <div className="text-green-400 font-bold text-xs flex items-center gap-1 mb-1"><Icons.ArrowRight className="w-3 h-3"/> 進攻: {attack_point.palace}</div>
+                            <p className="text-[10px] text-slate-400 leading-snug">{attack_point.advice}</p>
+                        </div>
+                        <div className="bg-red-950/30 border border-red-800/40 p-2 rounded">
+                            <div className="text-red-400 font-bold text-xs flex items-center gap-1 mb-1"><Icons.Shield className="w-3 h-3"/> 防守: {defense_point.palace}</div>
+                            <p className="text-[10px] text-slate-400 leading-snug">{defense_point.advice}</p>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ReportPanel = ({ selectedPalace, report, natalResult, flowResult, dict }) => {
+            if (!selectedPalace || !report) return <div className="p-8 text-slate-500 text-center flex flex-col items-center gap-2"><Icons.ArrowRight className="animate-bounce" /> 請點擊左側宮位查看詳情</div>;
+            const palaceName = selectedPalace.name;
+            const natalData = natalResult.scores.find(s => s.name === palaceName);
+            const natalScore = natalData?.score || 0;
+            const palaceRisks = report.flow_report?.risk_assessment?.filter(r => r.location === palaceName) || [];
+            
+            return (
+                <div className="bg-slate-900 h-full flex flex-col text-slate-300">
+                    <div className="p-4 border-b border-slate-700 bg-slate-800 flex justify-between items-center shadow-md z-10 shrink-0">
+                        <h2 className="text-lg font-bold text-white flex items-center gap-2"><Icons.BookOpen /> {palaceName}深度解析</h2>
+                        <div className="text-xs text-slate-500 font-mono">{selectedPalace.stem}{selectedPalace.branch}宮</div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                        <div className="bg-slate-800/50 p-3 rounded-lg border-l-4 border-blue-500">
+                            <h3 className="font-bold text-white mb-1 text-xs uppercase">宮位定義</h3>
+                            <p className="text-sm text-slate-400 leading-relaxed">{dict?.palace_definitions?.[palaceName]?.desc || "無資料"}</p>
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-white mb-2 flex items-center gap-2 text-sm border-b border-slate-700 pb-2"><Icons.Sparkles /> 本命格局 ({natalScore}分)</h3>
+                            <div className="w-full bg-slate-800 rounded-full h-2 mb-3"><div className={`h-2 rounded-full ${natalScore>80?'bg-purple-500':natalScore>60?'bg-blue-500':'bg-slate-500'}`} style={{width: `${natalScore}%`}}></div></div>
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-white mb-2 flex items-center gap-2 text-sm border-b border-slate-700 pb-2"><Icons.Activity /> 流年動態</h3>
+                            {palaceRisks.length > 0 ? palaceRisks.map((r, i) => (
+                                <div key={i} className="p-3 rounded-lg mb-2 text-sm border bg-red-950/20 border-red-800/60">
+                                    <div className="font-bold text-red-400 mb-1 flex items-center gap-2"><Icons.AlertTriangle/> {r.severity}</div>
+                                    <div className="text-slate-300 text-xs">{r.implication}</div>
+                                </div>
+                            )) : <div className="text-sm text-slate-500 italic">本年度平順無凶險。</div>}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ==========================================
+        // Main Application
+        // ==========================================
+
+        const App = () => {
+            const [view, setView] = useState('input'); // 'input' | 'dashboard'
+            const [inputConfig, setInputConfig] = useState({ birthYear: 1990, birthMonth: 6, birthDay: 15, birthHourIdx: 6, gender: 'M', isLeap: false, targetYear: 2026 });
+            
+            const coreRef = useRef(null);
+            const [isCoreLoaded, setIsCoreLoaded] = useState(false);
+            const [loadError, setLoadError] = useState(null);
+            const [isCalculating, setIsCalculating] = useState(false);
+
+            const [results, setResults] = useState(null);
+            const [report, setReport] = useState(null);
+            const [selectedPalaceIndex, setSelectedPalaceIndex] = useState(0);
+            const [layers, setLayers] = useState({ natal: true, decade: true, yearly: true });
+
+            useEffect(() => {
+                const load = async () => {
+                    try {
+                        const resolve = (m) => m.default || m;
+                        // 使用 nativeImport 繞過 Babel 的轉譯
+                        const [eng, dec, luc, ana, int, nat, trn, flo, dictRes] = await Promise.all([
+                            nativeImport(`${REMOTE_BASE_URL}/ziwei_engine.js`),
+                            nativeImport(`${REMOTE_BASE_URL}/ziwei_decade.js`),
+                            nativeImport(`${REMOTE_BASE_URL}/ziwei_luck.js`),
+                            nativeImport(`${REMOTE_BASE_URL}/ziwei_analyzer.js`),
+                            nativeImport(`${REMOTE_BASE_URL}/ziwei_interpreter.js`),
+                            nativeImport(`${REMOTE_BASE_URL}/ziwei_analyzer_natal.js`),
+                            nativeImport(`${REMOTE_BASE_URL}/ziwei_analyzer_trend.js`),
+                            nativeImport(`${REMOTE_BASE_URL}/ziwei_analyzer_flow.js`),
+                            fetch(`${REMOTE_BASE_URL}/ziwei_dictionary.json`)
+                        ]);
+
+                        if (!dictRes.ok) throw new Error("字典檔下載失敗");
+                        
+                        coreRef.current = {
+                            Engine: resolve(eng), Decade: resolve(dec), Luck: resolve(luc), Analyzer: resolve(ana), Interpreter: resolve(int),
+                            Analyzers: { Natal: resolve(nat), Trend: resolve(trn), Flow: resolve(flo) },
+                            Dict: await dictRes.json()
+                        };
+                        setIsCoreLoaded(true);
+                    } catch (e) {
+                        setLoadError(e.message);
+                    }
+                };
+                load();
+            }, []);
+
+            const runAnalysis = async () => {
+                setIsCalculating(true);
+                try {
+                    await new Promise(r => setTimeout(r, 800));
+                    const { Engine, Decade, Luck, Analyzer, Interpreter, Analyzers, Dict } = coreRef.current;
+                    
+                    const stems = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"];
+                    const branches = ["子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥"];
+                    const sIdx = (inputConfig.birthYear - 4 + 12000000) % 10;
+                    const bIdx = (inputConfig.birthYear - 4 + 12000000) % 12;
+
+                    const engineInput = {
+                        yearStem: stems[sIdx], yearBranch: branches[bIdx],
+                        month: Number(inputConfig.birthMonth), day: Number(inputConfig.birthDay),
+                        hourIdx: Number(inputConfig.birthHourIdx), gender: inputConfig.gender, isLeap: inputConfig.isLeap
+                    };
+
+                    const chart = Engine.getFullChart(engineInput);
+                    const age = Number(inputConfig.targetYear) - inputConfig.birthYear + 1;
+                    const decade = Decade.getDecadeInfo(age, chart, Dict);
+                    const yearly = Luck.getYearlyLuck(Number(inputConfig.targetYear), chart, decade, Dict);
+                    const monthly = Luck.getMonthlyLuck(1, yearly, engineInput);
+
+                    const fullData = { staticChart: chart, decadeInfo: decade, yearlyLuck: yearly, monthlyLuck: monthly };
+                    const allAnalysis = Analyzer.analyzeAll(Analyzers, fullData, Dict);
+                    const textReport = Interpreter.generateReport(allAnalysis, Dict, fullData);
+
+                    setResults({ chart, decade, yearly, natal: allAnalysis.natal, trend: allAnalysis.trend, flow: allAnalysis.flow });
+                    setReport(textReport);
+                    setSelectedPalaceIndex(chart.palaces.find(p => p.name === "命宮").index);
+                    
+                    setView('dashboard');
+                } catch (e) {
+                    alert("運算錯誤: " + e.message);
+                } finally {
+                    setIsCalculating(false);
+                }
+            };
+
+            if (view === 'input') {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-950 p-4 fade-in">
+                        <div className="w-full max-w-md bg-slate-900/80 border border-slate-800 rounded-2xl p-8 shadow-2xl backdrop-blur-xl">
+                            <div className="text-center mb-8">
+                                <div className="w-16 h-16 bg-purple-600 rounded-2xl mx-auto flex items-center justify-center text-3xl font-bold text-white shadow-lg mb-4">紫</div>
+                                <h1 className="text-2xl font-bold text-white">紫微斗數決策系統</h1>
+                                <div className="text-xs text-slate-500 mt-2 flex items-center justify-center gap-2">
+                                    {isCoreLoaded ? <span className="text-green-500 flex items-center gap-1"><Icons.Wifi/> 核心連線正常</span> : <span className="text-yellow-500 flex items-center gap-1"><Icons.Loader2/> 正在載入核心...</span>}
+                                </div>
+                                {loadError && <div className="text-red-500 text-xs mt-2 bg-red-950/30 p-2 rounded">{loadError}</div>}
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-slate-400 font-bold">出生年 (西元)</label>
+                                        <input type="number" value={inputConfig.birthYear} onChange={e=>setInputConfig({...inputConfig, birthYear: parseInt(e.target.value)})} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm focus:border-purple-500 outline-none text-center" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-slate-400 font-bold">目標流年</label>
+                                        <input type="number" value={inputConfig.targetYear} onChange={e=>setInputConfig({...inputConfig, targetYear: parseInt(e.target.value)})} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm focus:border-purple-500 outline-none text-center" />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-2">
+                                    <select value={inputConfig.birthMonth} onChange={e=>setInputConfig({...inputConfig, birthMonth: parseInt(e.target.value)})} className="bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm outline-none text-center">
+                                        {[...Array(12)].map((_,i)=><option key={i+1} value={i+1}>{i+1}月</option>)}
+                                    </select>
+                                    <select value={inputConfig.birthDay} onChange={e=>setInputConfig({...inputConfig, birthDay: parseInt(e.target.value)})} className="bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm outline-none text-center">
+                                        {[...Array(31)].map((_,i)=><option key={i+1} value={i+1}>{i+1}日</option>)}
+                                    </select>
+                                    <select value={inputConfig.birthHourIdx} onChange={e=>setInputConfig({...inputConfig, birthHourIdx: parseInt(e.target.value)})} className="bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm outline-none text-center">
+                                        {["子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥"].map((t,i)=><option key={i} value={i}>{t}時</option>)}
+                                    </select>
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <button onClick={()=>setInputConfig({...inputConfig, gender:'M'})} className={`flex-1 py-3 rounded-lg border text-sm font-bold transition-all ${inputConfig.gender==='M'?'bg-blue-600 border-blue-500 text-white':'bg-slate-800 border-slate-700 text-slate-500'}`}>乾造 (男)</button>
+                                    <button onClick={()=>setInputConfig({...inputConfig, gender:'F'})} className={`flex-1 py-3 rounded-lg border text-sm font-bold transition-all ${inputConfig.gender==='F'?'bg-pink-600 border-pink-500 text-white':'bg-slate-800 border-slate-700 text-slate-500'}`}>坤造 (女)</button>
+                                </div>
+
+                                <button 
+                                    onClick={runAnalysis} 
+                                    disabled={!isCoreLoaded || isCalculating}
+                                    className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 disabled:opacity-50 text-white font-bold py-4 rounded-xl shadow-lg shadow-purple-900/30 flex items-center justify-center gap-2 text-lg transition-all mt-6"
+                                >
+                                    {isCalculating ? <Icons.Loader2 className="animate-spin"/> : <Icons.CloudLightning/>}
+                                    {isCalculating ? '推演天機中...' : '開始深度推演'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            const displayPalaces = results.chart.palaces.map(p => {
+                const dP = results.decade?.palaces?.find(dp => dp.index === p.index);
+                const yP = results.yearly?.palaces?.find(yp => yp.index === p.index);
+                return { ...p, decadeStars: dP?.decadeStars, decadeName: dP?.decadeName, yearlyStars: yP?.yearlyStars, yearlyName: yP?.yearlyName, palaceStem: p.stem };
+            });
+
+            const gridMap = [
+                { pos: 'col-start-2 row-start-4', idx: 0 }, { pos: 'col-start-1 row-start-4', idx: 1 },
+                { pos: 'col-start-1 row-start-3', idx: 2 }, { pos: 'col-start-1 row-start-2', idx: 3 },
+                { pos: 'col-start-1 row-start-1', idx: 4 }, { pos: 'col-start-2 row-start-1', idx: 5 },
+                { pos: 'col-start-3 row-start-1', idx: 6 }, { pos: 'col-start-4 row-start-1', idx: 7 },
+                { pos: 'col-start-4 row-start-2', idx: 8 }, { pos: 'col-start-4 row-start-3', idx: 9 },
+                { pos: 'col-start-4 row-start-4', idx: 10 }, { pos: 'col-start-3 row-start-4', idx: 11 }
+            ];
+
+            return (
+                <div className="h-screen flex flex-col md:flex-row overflow-hidden bg-slate-950 fade-in">
+                    <div className="md:w-16 h-16 md:h-screen bg-slate-900 border-r border-slate-800 flex md:flex-col items-center justify-between p-4 shrink-0 z-50">
+                        <button onClick={()=>setView('input')} className="p-3 bg-slate-800 rounded-xl hover:bg-slate-700 transition text-slate-400 hover:text-white" title="重新輸入"><Icons.RotateCcw className="w-5 h-5"/></button>
+                        <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center font-bold text-white text-xs">紫</div>
+                    </div>
+
+                    <div className="flex-1 flex flex-col overflow-hidden relative">
+                        <div className="absolute top-4 right-4 z-20 flex gap-2">
+                            <label className="flex items-center gap-1 bg-slate-900/80 px-3 py-1 rounded-full border border-slate-700 text-xs cursor-pointer"><input type="checkbox" checked={layers.natal} onChange={()=>setLayers(p=>({...p, natal:!p.natal}))} /> 本命</label>
+                            <label className="flex items-center gap-1 bg-slate-900/80 px-3 py-1 rounded-full border border-slate-700 text-xs cursor-pointer"><input type="checkbox" checked={layers.decade} onChange={()=>setLayers(p=>({...p, decade:!p.decade}))} /> 大限</label>
+                            <label className="flex items-center gap-1 bg-slate-900/80 px-3 py-1 rounded-full border border-slate-700 text-xs cursor-pointer"><input type="checkbox" checked={layers.yearly} onChange={()=>setLayers(p=>({...p, yearly:!p.yearly}))} /> 流年</label>
+                        </div>
+
+                        <div className="flex-1 p-4 md:p-8 overflow-y-auto flex items-center justify-center">
+                            <div className="grid grid-cols-4 grid-rows-4 gap-2 aspect-square h-full max-h-[800px] w-full max-w-[800px]">
+                                <div className="col-start-2 row-start-2 col-span-2 row-span-2 bg-slate-900/50 border border-slate-800 rounded-2xl flex flex-col justify-center items-center p-4 relative overflow-hidden backdrop-blur-sm">
+                                    <div className="relative z-10 text-center">
+                                        <h2 className="text-3xl font-bold text-white mb-2">{inputConfig.birthYear}</h2>
+                                        <div className="text-purple-400 text-sm tracking-widest uppercase">{results.chart.bureau?.name} · {inputConfig.gender==='M'?'乾造':'坤造'}</div>
+                                        <div className="mt-6 pt-6 border-t border-slate-700/50 w-full">
+                                            <div className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">STRATEGIC THEME</div>
+                                            <div className="text-blue-300 font-bold text-sm px-4">{results.flow?.theme?.focus}</div>
+                                        </div>
+                                    </div>
+                                    <div className="absolute inset-0 opacity-20 pointer-events-none">
+                                        <ResponsiveContainer><RadarChart data={results.natal.scores.map(s=>({v:s.score}))}><RadarArea dataKey="v" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.5}/></RadarChart></ResponsiveContainer>
+                                    </div>
+                                </div>
+
+                                {gridMap.map((cell) => (
+                                    <div key={cell.idx} className={`${cell.pos} min-h-0`}>
+                                        <PalaceCard 
+                                            palace={displayPalaces[cell.idx]}
+                                            isSelected={selectedPalaceIndex === cell.idx}
+                                            layers={layers}
+                                            activeRisks={results.flow.resonanceRisk}
+                                            onClick={()=>setSelectedPalaceIndex(cell.idx)}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="w-full md:w-96 bg-slate-900 border-l border-slate-800 flex flex-col shadow-2xl z-30">
+                        <div className="h-1/3 min-h-[250px] border-b border-slate-800 p-4 shrink-0 bg-slate-900/50">
+                            <TacticalMap report={report} />
+                        </div>
+                        <div className="flex-1 overflow-hidden">
+                            <ReportPanel 
+                                selectedPalace={results.chart.palaces[selectedPalaceIndex]}
+                                natalResult={results.natal}
+                                flowResult={results.flow}
+                                report={report}
+                                dict={coreRef.current.Dict}
+                            />
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
