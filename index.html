@@ -3,411 +3,364 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>紫微斗數深度決策戰情室 (Pro)</title>
-    
-    <!-- 1. 核心依賴：React 與 Recharts (鎖定版本以確保 UMD 相容) -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
-    <script src="https://unpkg.com/recharts@2.10.3/umd/Recharts.js"></script>
-
-    <!-- 2. 工具庫 -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <title>紫微斗數 AI 提詞產生器 (Pro Edition)</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-
+    <script src="https://cdn.jsdelivr.net/npm/lunar-javascript@1.6.12/lunar.min.js"></script>
     <style>
-        body { background-color: #020617; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; }
-        /* 優化捲軸體驗 */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #0f172a; }
-        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #475569; }
-        .fade-in { animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f0f2f5; }
+        .card { background: white; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); transition: transform 0.2s; }
+        .card:hover { transform: translateY(-2px); }
+        .loader { border: 3px solid #f3f3f3; border-radius: 50%; border-top: 3px solid #7c3aed; width: 20px; height: 20px; -webkit-animation: spin 1s linear infinite; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px;}
+        @-webkit-keyframes spin { 0% { -webkit-transform: rotate(0deg); } 100% { -webkit-transform: rotate(360deg); } }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        select, input { transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out; }
+        select:focus, input:focus { border-color: #8b5cf6; box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1); outline: none; }
     </style>
 </head>
-<body>
+<body class="p-4 md:p-8 text-slate-800">
 
-    <div id="root"></div>
+    <div class="max-w-5xl mx-auto">
+        <header class="mb-10 text-center">
+            <h1 class="text-4xl font-extrabold text-slate-800 tracking-tight">🔮 紫微斗數 AI 戰略顧問</h1>
+            <p class="text-slate-500 mt-3 font-medium">Powered by Logic Engine v8.3 & Analyzer v2.0</p>
+        </header>
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
-        
-        // --- 核心修正：繞過 Babel 的 import 轉譯，確保能載入 ES Module ---
-        const nativeImport = (url) => {
-            return new Function(`return import("${url}")`)();
-        };
-
-        // --- 安全檢查：Recharts ---
-        if (!window.Recharts) { throw new Error("Recharts library failed to load."); }
-        const { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } = window.Recharts;
-        const RadarArea = window.Recharts.Radar;
-
-        // --- Icons 定義 (避免 CDN 延遲) ---
-        const Icons = {
-            CloudLightning: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6"><path d="M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 .5 8.973"/><path d="m13 12-3 5h4l-3 5"/></svg>,
-            Loader2: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>,
-            Send: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>,
-            Settings: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>,
-            Wifi: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>,
-            Calendar: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>,
-            RotateCcw: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>,
-            ArrowLeft: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>,
-            User: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
-            Activity: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>,
-            Shield: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
-            Crosshair: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/></svg>,
-            ArrowRight: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>,
-            BookOpen: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>,
-            Sparkles: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M9 3v4"/><path d="M3 9h4"/><path d="M3 5h4"/></svg>,
-            AlertTriangle: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>,
-            CloudLightning: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 .5 8.973"/><path d="m13 12-3 5h4l-3 5"/></svg>
-        };
-
-        const REMOTE_BASE_URL = "https://jasw-1989.github.io/ziwei";
-
-        // ==========================================
-        // UI Components
-        // ==========================================
-
-        const PalaceCard = ({ palace, isSelected, onClick, layers, activeRisks }) => {
-            const isLife = palace.name === "命宮";
-            const risk = activeRisks?.find(r => r.palace === palace.name);
-
-            return (
-                <div onClick={onClick} className={`relative p-2 border transition-all cursor-pointer h-full flex flex-col justify-between overflow-hidden group ${isSelected ? 'border-blue-500 ring-2 ring-blue-500/50 bg-slate-800' : 'border-slate-700 bg-slate-900/50 hover:bg-slate-800'} ${risk?.type.includes('JI') ? 'bg-red-950/30 border-red-800/60' : ''} ${risk?.type.includes('LU') ? 'bg-green-950/30 border-green-800/60' : ''}`}>
-                    {risk && (
-                        <div className={`absolute top-0 right-0 px-2 py-0.5 text-[9px] font-bold z-10 shadow-sm backdrop-blur-sm ${risk.type.includes('JI') ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>
-                            {risk.type === 'TRIPLE_JI' ? '🛑 三忌' : risk.type === 'DOUBLE_JI' ? '⚠️ 雙忌' : '💰 雙祿'}
-                        </div>
-                    )}
-                    <div className="flex justify-between items-end border-b border-slate-700 pb-1 mb-1 shrink-0">
-                        <span className="text-[10px] text-slate-500 font-mono">{palace.stem}{palace.branch}</span>
-                        <span className={`font-bold ${isLife ? 'text-yellow-400 text-sm' : 'text-slate-200 text-xs'}`}>{palace.name}</span>
-                    </div>
-                    <div className="flex-1 overflow-y-auto space-y-0.5 scrollbar-thin scrollbar-thumb-slate-700 pr-1">
-                        {layers.natal && palace.stars.map((s, i) => (
-                            <div key={`n-${i}`} className={`text-[10px] flex justify-between items-center leading-tight ${s.transformation === '忌' ? 'text-red-400 font-bold' : s.transformation === '祿' ? 'text-green-400 font-bold' : s.type === 'major' ? 'text-red-200' : 'text-slate-400'}`}>
-                                <span className="truncate">{s.name.split('(')[0]}</span>
-                                {s.transformation && <span className={`text-[8px] px-1 rounded-full ${s.transformation==='忌'?'bg-red-600 text-white':s.transformation==='祿'?'bg-green-600 text-white':'bg-slate-700 text-slate-300'}`}>{s.transformation}</span>}
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <!-- 左側：輸入控制面板 (佔 5 等份) -->
+            <div class="lg:col-span-5 space-y-6">
+                <div class="card p-6 border-t-4 border-purple-600">
+                    <h2 class="text-xl font-bold mb-6 text-slate-800 flex items-center">
+                        <span class="bg-purple-100 text-purple-700 p-2 rounded-lg mr-3">1</span> 
+                        命主資料輸入
+                    </h2>
+                    <form id="inputForm" class="space-y-5">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="col-span-2">
+                                <label class="block text-sm font-semibold text-slate-600 mb-1">出生日期 (西曆)</label>
+                                <input type="date" id="birthDate" class="w-full rounded-lg border-slate-200 bg-slate-50 p-2.5 border" required>
                             </div>
-                        ))}
-                    </div>
-                    <div className="mt-1 pt-1 border-t border-slate-800 flex justify-between text-[8px] text-slate-600 shrink-0">
-                        <span>{palace.ageStart}-{palace.ageStart+9}</span>
-                    </div>
-                </div>
-            );
-        };
-
-        const TacticalMap = ({ report }) => {
-            // 此處直接使用 interpreter 產出的完整建議文字
-            if (!report || !report.tactical_map) return null;
-            const { attack_point, defense_point, safe_haven } = report.tactical_map;
-            
-            return (
-                <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 h-full flex flex-col">
-                    <h3 className="text-slate-300 font-bold mb-3 flex items-center gap-2 text-xs uppercase tracking-wider">
-                        <Icons.Crosshair /> 戰術地圖 (Interpreter)
-                    </h3>
-                    <div className="space-y-3 flex-1 overflow-y-auto pr-1">
-                        <div className="bg-green-950/30 border border-green-800/40 p-2 rounded">
-                            <div className="text-green-400 font-bold text-xs flex items-center gap-1 mb-1"><Icons.ArrowRight className="w-3 h-3"/> 進攻: {attack_point.palace}</div>
-                            {/* 這裡顯示的是字典裡的具體建議 */}
-                            <p className="text-[10px] text-slate-400 leading-snug">{attack_point.advice}</p>
-                        </div>
-                        <div className="bg-red-950/30 border border-red-800/40 p-2 rounded">
-                            <div className="text-red-400 font-bold text-xs flex items-center gap-1 mb-1"><Icons.Shield className="w-3 h-3"/> 防守: {defense_point.palace}</div>
-                            <p className="text-[10px] text-slate-400 leading-snug">{defense_point.advice}</p>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        const ReportPanel = ({ selectedPalace, report, natalResult, flowResult }) => {
-            if (!selectedPalace || !report) return <div className="p-8 text-slate-500 text-center flex flex-col items-center gap-2"><Icons.ArrowRight className="animate-bounce" /> 請點擊左側宮位查看詳情</div>;
-            const palaceName = selectedPalace.name;
-            const natalData = natalResult.scores.find(s => s.name === palaceName);
-            const natalScore = natalData?.score || 0;
-            const palaceRisks = report.flow_report?.risk_assessment?.filter(r => r.location === palaceName) || [];
-            
-            // 從 Report 中提取定義與特質，而非直接查 Dict，確保一致性
-            const definition = report.natal_report.core_engine.definition; // 這裡假設 Interpreter 已經處理好
-            
-            // 手動查找特質作為 fallback，因為 interpreter 回傳的是全盤摘要
-            const majorStars = selectedPalace.stars.filter(s => s.type === 'major').map(s => s.name.split('(')[0]);
-            
-            return (
-                <div className="bg-slate-900 h-full flex flex-col text-slate-300">
-                    <div className="p-4 border-b border-slate-700 bg-slate-800 flex justify-between items-center shadow-md z-10 shrink-0">
-                        <h2 className="text-lg font-bold text-white flex items-center gap-2"><Icons.BookOpen /> {palaceName}深度解析</h2>
-                        <div className="text-xs text-slate-500 font-mono">{selectedPalace.stem}{selectedPalace.branch}宮</div>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-4 space-y-6">
-                        <div className="bg-slate-800/50 p-3 rounded-lg border-l-4 border-blue-500">
-                            <h3 className="font-bold text-white mb-1 text-xs uppercase">宮位定義</h3>
-                            <p className="text-sm text-slate-400 leading-relaxed">
-                                {/* 這裡應該顯示字典裡的定義，若 Interpreter 未傳遞則需補強 */}
-                                {`這是您的${palaceName}，代表相關領域的運勢與機會。`} 
-                            </p>
-                        </div>
-                        <div>
-                            <h3 className="font-bold text-white mb-2 flex items-center gap-2 text-sm border-b border-slate-700 pb-2"><Icons.Sparkles /> 本命格局 ({natalScore}分)</h3>
-                            <div className="w-full bg-slate-800 rounded-full h-2 mb-3"><div className={`h-2 rounded-full ${natalScore>80?'bg-purple-500':natalScore>60?'bg-blue-500':'bg-slate-500'}`} style={{width: `${natalScore}%`}}></div></div>
-                            <div className="text-xs text-slate-400">
-                                主星：{majorStars.join("、") || "無主星"}
+                            <div>
+                                <label class="block text-sm font-semibold text-slate-600 mb-1">出生時間</label>
+                                <input type="time" id="birthTime" class="w-full rounded-lg border-slate-200 bg-slate-50 p-2.5 border" required>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-slate-600 mb-1">性別</label>
+                                <select id="gender" class="w-full rounded-lg border-slate-200 bg-slate-50 p-2.5 border">
+                                    <option value="M">男 (Male)</option>
+                                    <option value="F">女 (Female)</option>
+                                </select>
                             </div>
                         </div>
-                        <div>
-                            <h3 className="font-bold text-white mb-2 flex items-center gap-2 text-sm border-b border-slate-700 pb-2"><Icons.Activity /> 流年動態 (Interpreter)</h3>
-                            {palaceRisks.length > 0 ? palaceRisks.map((r, i) => (
-                                <div key={i} className="p-3 rounded-lg mb-2 text-sm border bg-red-950/20 border-red-800/60">
-                                    <div className="font-bold text-red-400 mb-1 flex items-center gap-2"><Icons.AlertTriangle/> {r.severity}</div>
-                                    <div className="text-slate-300 text-xs mb-1">{r.implication}</div>
-                                    <div className="text-slate-400 text-xs italic border-t border-red-900/30 pt-1 mt-1">建議：{r.advice}</div>
+
+                        <div class="pt-4 border-t border-slate-100">
+                            <h3 class="text-sm font-bold text-slate-800 mb-3">分析設定</h3>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">推算年份</label>
+                                    <input type="number" id="targetYear" class="w-full rounded-lg border-purple-200 bg-purple-50 p-2.5 border font-semibold text-purple-700" value="2026">
                                 </div>
-                            )) : <div className="text-sm text-slate-500 italic">本年度平順無凶險。</div>}
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">顧問風格 (AI Persona)</label>
+                                    <select id="aiPersona" class="w-full rounded-lg border-slate-200 bg-slate-50 p-2.5 border">
+                                        <option value="business">💼 商業戰略顧問 (理智、決策導向)</option>
+                                        <option value="counseling">❤️ 心理諮商師 (溫暖、療癒導向)</option>
+                                        <option value="master">⛩️ 傳統命理大師 (玄學、因果導向)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button type="submit" id="submitBtn" disabled class="w-full bg-slate-300 text-white py-3.5 px-4 rounded-xl transition-all font-bold shadow-md cursor-not-allowed flex justify-center items-center mt-4">
+                            <span id="btnLoader" class="loader"></span>
+                            <span id="btnText">核心載入中...</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 右側：輸出面板 (佔 7 等份) -->
+            <div class="lg:col-span-7 flex flex-col h-full">
+                <div class="card p-6 h-full flex flex-col border-t-4 border-green-500 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 p-4 opacity-10">
+                        <svg width="120" height="120" viewBox="0 0 24 24" fill="currentColor"><path d="M21 16.5c0 .38-.21.71-.53.88l-7.9 4.44c-.16.12-.36.18-.57.18-.21 0-.41-.06-.57-.18l-7.9-4.44A.991.991 0 0 1 3 16.5v-9c0-.38.21-.71.53-.88l7.9-4.44A.99.99 0 0 1 12 2c.21 0 .41.06.57.18l7.9 4.44c.32.17.53.5.53.88v9zM12 4.15L6.04 7.5 12 10.85l5.96-3.35L12 4.15z"/></svg>
+                    </div>
+                    
+                    <h2 class="text-xl font-bold mb-2 text-slate-800 flex items-center z-10">
+                        <span class="bg-green-100 text-green-700 p-2 rounded-lg mr-3">2</span>
+                        AI 分析指令 (Prompt)
+                    </h2>
+                    <p class="text-sm text-slate-500 mb-4 z-10">
+                        系統將自動執行「本命+大限+流年+流月」四層邏輯運算，並生成精準指令。
+                    </p>
+                    
+                    <div class="relative flex-1 min-h-[400px]">
+                        <textarea id="outputPrompt" class="w-full h-full p-4 text-xs font-mono bg-slate-900 text-emerald-400 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-green-500 leading-relaxed" readonly placeholder="// 請先輸入資料並點擊運算..."></textarea>
+                        
+                        <!-- 複製按鈕 -->
+                        <div id="copyOverlay" class="absolute bottom-4 right-4 hidden">
+                            <button id="copyBtn" class="bg-white text-slate-800 hover:text-green-600 hover:bg-green-50 border border-slate-200 shadow-lg py-2 px-6 rounded-full transition font-bold flex items-center space-x-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+                                <span>複製指令</span>
+                            </button>
                         </div>
                     </div>
                 </div>
-            );
-        };
+            </div>
+        </div>
 
-        // ==========================================
-        // Main Application
-        // ==========================================
+        <!-- 隱藏的 Debug 區 -->
+        <div id="debugInfo" class="mt-8 p-4 text-xs text-slate-400 font-mono hidden bg-slate-900 rounded-lg overflow-x-auto"></div>
+    </div>
 
-        const App = () => {
-            const [view, setView] = useState('input');
-            const [inputConfig, setInputConfig] = useState({ birthYear: 1990, birthMonth: 6, birthDay: 15, birthHourIdx: 6, gender: 'M', isLeap: false, targetYear: 2026 });
-            
-            const coreRef = useRef(null);
-            const [isCoreLoaded, setIsCoreLoaded] = useState(false);
-            const [loadError, setLoadError] = useState(null);
-            const [isCalculating, setIsCalculating] = useState(false);
+    <script type="module">
+        // 設定 GitHub Pages 的基礎路徑 (指向您的 Repository)
+        const BASE_URL = 'https://jasw-1989.github.io/ziwei/';
 
-            const [results, setResults] = useState(null);
-            const [report, setReport] = useState(null);
-            const [selectedPalaceIndex, setSelectedPalaceIndex] = useState(0);
-            const [layers, setLayers] = useState({ natal: true, decade: true, yearly: true });
+        let Engines = {};
+        let DICT = {};
 
-            useEffect(() => {
-                const load = async () => {
-                    try {
-                        const resolve = (m) => m.default || m;
-                        const [eng, dec, luc, ana, int, nat, trn, flo, dictRes] = await Promise.all([
-                            nativeImport(`${REMOTE_BASE_URL}/ziwei_engine.js`),
-                            nativeImport(`${REMOTE_BASE_URL}/ziwei_decade.js`),
-                            nativeImport(`${REMOTE_BASE_URL}/ziwei_luck.js`),
-                            nativeImport(`${REMOTE_BASE_URL}/ziwei_analyzer.js`),
-                            nativeImport(`${REMOTE_BASE_URL}/ziwei_interpreter.js`),
-                            nativeImport(`${REMOTE_BASE_URL}/ziwei_analyzer_natal.js`),
-                            nativeImport(`${REMOTE_BASE_URL}/ziwei_analyzer_trend.js`),
-                            nativeImport(`${REMOTE_BASE_URL}/ziwei_analyzer_flow.js`),
-                            fetch(`${REMOTE_BASE_URL}/ziwei_dictionary.json`)
-                        ]);
+        const submitBtn = document.getElementById('submitBtn');
+        const btnText = document.getElementById('btnText');
+        const btnLoader = document.getElementById('btnLoader');
 
-                        if (!dictRes.ok) throw new Error("字典檔下載失敗");
-                        const dictJson = await dictRes.json();
-                        
-                        coreRef.current = {
-                            Engine: resolve(eng), Decade: resolve(dec), Luck: resolve(luc), Analyzer: resolve(ana), Interpreter: resolve(int),
-                            Analyzers: { Natal: resolve(nat), Trend: resolve(trn), Flow: resolve(flo) },
-                            Dict: dictJson
-                        };
-                        setIsCoreLoaded(true);
-                        console.log("Modules Loaded:", coreRef.current);
-                    } catch (e) {
-                        setLoadError(e.message);
-                    }
+        // 1. 系統初始化 (載入 v8.3+ 核心)
+        async function initSystem() {
+            try {
+                console.log("🚀 初始化紫微斗數核心引擎...");
+
+                const [
+                    ZiweiEngineMod,
+                    ZiweiDecadeMod,
+                    ZiweiLuckMod,
+                    NatalAnalyzerMod,
+                    TrendAnalyzerMod,
+                    FlowAnalyzerMod,
+                    ZiweiAnalyzerMod
+                ] = await Promise.all([
+                    import(BASE_URL + 'ziwei_engine.js'),
+                    import(BASE_URL + 'ziwei_decade.js'),
+                    import(BASE_URL + 'ziwei_luck.js'),
+                    import(BASE_URL + 'ziwei_analyzer_natal.js'),
+                    import(BASE_URL + 'ziwei_analyzer_trend.js'),
+                    import(BASE_URL + 'ziwei_analyzer_flow.js'),
+                    import(BASE_URL + 'ziwei_analyzer.js')
+                ]);
+
+                Engines = {
+                    ZiweiEngine: ZiweiEngineMod.default,
+                    ZiweiDecade: ZiweiDecadeMod.default,
+                    ZiweiLuck: ZiweiLuckMod.default,
+                    NatalAnalyzer: NatalAnalyzerMod.default,
+                    TrendAnalyzer: TrendAnalyzerMod.default,
+                    FlowAnalyzer: FlowAnalyzerMod.default,
+                    ZiweiAnalyzer: ZiweiAnalyzerMod.default
                 };
-                load();
-            }, []);
 
-            const runAnalysis = async () => {
-                setIsCalculating(true);
-                try {
-                    await new Promise(r => setTimeout(r, 800));
-                    const { Engine, Decade, Luck, Analyzer, Interpreter, Analyzers, Dict } = coreRef.current;
-                    
-                    const stems = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"];
-                    const branches = ["子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥"];
-                    const sIdx = (inputConfig.birthYear - 4 + 12000000) % 10;
-                    const bIdx = (inputConfig.birthYear - 4 + 12000000) % 12;
+                const dictResponse = await fetch(BASE_URL + 'ziwei_dictionary.json');
+                if (!dictResponse.ok) throw new Error(`Dictionary fetch failed`);
+                DICT = await dictResponse.json();
 
-                    const engineInput = {
-                        yearStem: stems[sIdx], yearBranch: branches[bIdx],
-                        month: Number(inputConfig.birthMonth), day: Number(inputConfig.birthDay),
-                        hourIdx: Number(inputConfig.birthHourIdx), gender: inputConfig.gender, isLeap: inputConfig.isLeap
-                    };
+                console.log("✅ 系統載入完成");
 
-                    console.log("Running Pipeline with:", engineInput);
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('bg-slate-300', 'cursor-not-allowed');
+                submitBtn.classList.add('bg-purple-600', 'hover:bg-purple-700', 'shadow-purple-200');
+                btnText.innerText = "⚡ 啟動 AI 戰略分析";
+                btnLoader.style.display = 'none';
 
-                    const chart = Engine.getFullChart(engineInput);
-                    const age = Number(inputConfig.targetYear) - inputConfig.birthYear + 1;
-                    const decade = Decade.getDecadeInfo(age, chart, Dict);
-                    const yearly = Luck.getYearlyLuck(Number(inputConfig.targetYear), chart, decade, Dict);
-                    const monthly = Luck.getMonthlyLuck(1, yearly, engineInput);
+            } catch (error) {
+                console.error(error);
+                btnText.innerText = "核心載入失敗 (Check Console)";
+                btnLoader.style.borderColor = "#ef4444";
+                btnLoader.style.borderTopColor = "transparent";
+            }
+        }
 
-                    const fullData = { staticChart: chart, decadeInfo: decade, yearlyLuck: yearly, monthlyLuck: monthly };
-                    const allAnalysis = Analyzer.analyzeAll(Analyzers, fullData, Dict);
-                    
-                    console.log("Analysis Result:", allAnalysis);
-                    
-                    const textReport = Interpreter.generateReport(allAnalysis, Dict, fullData);
-                    
-                    console.log("Interpreted Report:", textReport);
+        initSystem();
 
-                    setResults({ chart, decade, yearly, natal: allAnalysis.natal, trend: allAnalysis.trend, flow: allAnalysis.flow });
-                    setReport(textReport);
-                    setSelectedPalaceIndex(chart.palaces.find(p => p.name === "命宮").index);
-                    setView('dashboard');
-                } catch (e) {
-                    alert("運算錯誤: " + e.message);
-                    console.error(e);
-                } finally {
-                    setIsCalculating(false);
+        // 2. 主運算邏輯
+        document.getElementById('inputForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if (!Engines.ZiweiEngine) return;
+
+            try {
+                // UI Loading 狀態
+                btnText.innerText = "運算中...";
+                btnLoader.style.display = 'inline-block';
+                
+                const dateStr = document.getElementById('birthDate').value;
+                const timeStr = document.getElementById('birthTime').value;
+                const gender = document.getElementById('gender').value;
+                const targetYear = parseInt(document.getElementById('targetYear').value);
+                const persona = document.getElementById('aiPersona').value;
+
+                const [year, month, day] = dateStr.split('-').map(Number);
+                const [hour, minute] = timeStr.split(':').map(Number);
+
+                // A. 農曆轉換
+                const solar = Solar.fromYmdHms(year, month, day, hour, minute, 0);
+                const lunar = solar.getLunar();
+                const bz = lunar.getEightChar();
+                const zhi = bz.getTimeZhi();
+                const hourIdx = Engines.ZiweiEngine.BRANCHES.indexOf(zhi);
+
+                const rawInput = {
+                    yearStem: bz.getYearGan(),
+                    yearBranch: bz.getYearZhi(),
+                    month: lunar.getMonth(),
+                    day: lunar.getDay(),
+                    hourIdx: hourIdx,
+                    gender: gender,
+                    isLeap: Math.abs(lunar.getMonth()) !== lunar.getMonth()
+                };
+
+                // B. 排盤 (核心 Engine)
+                const staticChart = Engines.ZiweiEngine.getFullChart(rawInput);
+                const currentAge = targetYear - year + 1;
+                const decadeInfo = Engines.ZiweiDecade.getDecadeInfo(currentAge, staticChart, DICT);
+                const yearlyLuck = Engines.ZiweiLuck.getYearlyLuck(targetYear, staticChart, decadeInfo, DICT);
+
+                // **精進點 1: 補完流月運算 (Loop 12 Months)**
+                // 我們預算一整年的流月，讓 AI 可以知道哪個月有風險
+                const monthlyData = [];
+                for (let m = 1; m <= 12; m++) {
+                    // getMonthlyLuck 需要 rawInput 中的 birthInfo 嗎？
+                    // 根據 ZiweiLuck v5.0，它需要 lunarMonth, yearlyLuck, 和 birthInfo(month, hourIdx)
+                    // 我們手動構造一個 birthInfo
+                    const birthInfo = { month: rawInput.month, hourIdx: rawInput.hourIdx };
+                    const mLuck = Engines.ZiweiLuck.getMonthlyLuck(m, yearlyLuck, birthInfo);
+                    if (mLuck) monthlyData.push(mLuck);
+                }
+
+                const fullData = {
+                    staticChart,
+                    decadeInfo,
+                    yearlyLuck,
+                    monthlyLuck: monthlyData // 傳入陣列供 FlowAnalyzer 分析
+                };
+
+                // C. 分析 (Analyzer)
+                // FlowAnalyzer v2.1 支援 analyze(fullData...) 
+                // 注意：如果您的 FlowAnalyzer 只支援單月分析，這裡 AI Prompt 會只拿到 "monthlyForecast" 的單月資料
+                // 但我們會把 monthlyData 放進 JSON 讓 AI 直接讀取 Raw Data
+                
+                const analyzerModules = {
+                    Natal: Engines.NatalAnalyzer,
+                    Trend: Engines.TrendAnalyzer,
+                    Flow: Engines.FlowAnalyzer
+                };
+
+                const analysisResult = Engines.ZiweiAnalyzer.analyzeAll(analyzerModules, fullData, DICT);
+                
+                // 將流月 Raw Data 附加上去，確保 Prompt 包含完整流月趨勢
+                analysisResult.monthlyRaw = monthlyData.map(m => ({
+                    month: m.lunarMonth,
+                    stem: m.monthStem,
+                    // 簡化輸出：只列出該月化忌沖哪裡
+                    risk: m.siHuaPath?.忌?.palace ? `忌入${m.siHuaPath.忌.palace}` : "",
+                    opportunity: m.siHuaPath?.祿?.palace ? `祿入${m.siHuaPath.祿.palace}` : ""
+                }));
+
+                // D. 生成 Prompt
+                const promptText = generatePrompt(analysisResult, rawInput, targetYear, currentAge, persona);
+                
+                // E. 輸出與動畫
+                const outputEl = document.getElementById('outputPrompt');
+                outputEl.value = promptText;
+                document.getElementById('copyOverlay').classList.remove('hidden');
+                
+                document.getElementById('debugInfo').innerText = JSON.stringify(analysisResult, null, 2);
+
+                btnText.innerText = "⚡ 重新運算";
+                btnLoader.style.display = 'none';
+
+            } catch (err) {
+                console.error(err);
+                alert("運算錯誤: " + err.message);
+                btnText.innerText = "運算失敗";
+                btnLoader.style.display = 'none';
+            }
+        });
+
+        document.getElementById('copyBtn').addEventListener('click', () => {
+            document.getElementById('outputPrompt').select();
+            document.execCommand('copy');
+            const btn = document.getElementById('copyBtn');
+            const originalContent = btn.innerHTML;
+            btn.innerHTML = `<span class="text-green-600">✅ 已複製</span>`;
+            setTimeout(() => btn.innerHTML = originalContent, 2000);
+        });
+
+        // **精進點 2: 動態 Prompt 生成器 (Persona-based)**
+        function generatePrompt(data, input, targetYear, age, persona) {
+            
+            const strategy = data.trend ? (data.trend.trend?.strategy || data.trend.strategy) : "資料不足";
+            
+            // 根據不同 Persona 定義 Tone 與 Focus
+            const personas = {
+                "business": {
+                    role: "頂尖商業戰略顧問 (Top-tier Business Strategist)",
+                    tone: "專業、客觀、決策導向、直指核心風險與機會。",
+                    focus: "專注於事業發展、資產配置、職場升遷與競爭力分析。",
+                    structure_hint: "請用商業報告格式 (Executive Summary, SWOT Analysis, Action Plan)。"
+                },
+                "counseling": {
+                    role: "資深心理諮商師與命理療癒師 (Psychological Counselor & Healer)",
+                    tone: "溫暖、同理心、鼓勵性、專注於內在感受與成長。",
+                    focus: "專注於情緒健康、人際關係和諧、自我價值與心靈平靜。",
+                    structure_hint: "請用諮商對話格式，多使用共情語言，提供情緒疏導建議。"
+                },
+                "master": {
+                    role: "傳統紫微斗數大師 (Traditional Ziwei Master)",
+                    tone: "嚴謹、玄學、因果導向、引用古訣。",
+                    focus: "專注於吉凶禍福、因果業力、流年應期與化解之道。",
+                    structure_hint: "請多引用命理術語（如：祿忌沖、三方四正），並給予傳統開運建議。"
                 }
             };
 
-            if (view === 'input') {
-                return (
-                    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-950 p-4 fade-in">
-                        <div className="w-full max-w-md bg-slate-900/80 border border-slate-800 rounded-2xl p-8 shadow-2xl backdrop-blur-xl">
-                            <div className="text-center mb-8">
-                                <div className="w-16 h-16 bg-purple-600 rounded-2xl mx-auto flex items-center justify-center text-3xl font-bold text-white shadow-lg mb-4">紫</div>
-                                <h1 className="text-2xl font-bold text-white">紫微斗數決策系統</h1>
-                                <div className="text-xs text-slate-500 mt-2 flex items-center justify-center gap-2">
-                                    {isCoreLoaded ? <span className="text-green-500 flex items-center gap-1"><Icons.Wifi/> 核心連線正常</span> : <span className="text-yellow-500 flex items-center gap-1"><Icons.Loader2/> 正在載入核心...</span>}
-                                </div>
-                                {loadError && <div className="text-red-500 text-xs mt-2 bg-red-950/30 p-2 rounded">{loadError}</div>}
-                            </div>
+            const pConfig = personas[persona];
 
-                            <div className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-400 font-bold">出生年 (西元)</label>
-                                        <input type="number" value={inputConfig.birthYear} onChange={e=>setInputConfig({...inputConfig, birthYear: parseInt(e.target.value)})} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm focus:border-purple-500 outline-none text-center" />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-400 font-bold">目標流年</label>
-                                        <input type="number" value={inputConfig.targetYear} onChange={e=>setInputConfig({...inputConfig, targetYear: parseInt(e.target.value)})} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm focus:border-purple-500 outline-none text-center" />
-                                    </div>
-                                </div>
+            return `
+# Role: ${pConfig.role}
+# Task: 根據提供的嚴謹紫微斗數運算數據，為用戶提供${targetYear}年度深度分析。
+# Tone: ${pConfig.tone}
+# Constraint: 
+1. 絕對不要重新排盤，完全信任 [ANALYSIS DATA] 中的數據。
+2. 數據中的 'resonanceRisk' (共振風險) 是經過演算法驗證的高風險指標，必須優先解讀。
+3. 請參考 data.monthlyRaw 中的流月趨勢，指出那幾個月波動最大。
 
-                                <div className="grid grid-cols-3 gap-2">
-                                    <select value={inputConfig.birthMonth} onChange={e=>setInputConfig({...inputConfig, birthMonth: parseInt(e.target.value)})} className="bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm outline-none text-center">
-                                        {[...Array(12)].map((_,i)=><option key={i+1} value={i+1}>{i+1}月</option>)}
-                                    </select>
-                                    <select value={inputConfig.birthDay} onChange={e=>setInputConfig({...inputConfig, birthDay: parseInt(e.target.value)})} className="bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm outline-none text-center">
-                                        {[...Array(31)].map((_,i)=><option key={i+1} value={i+1}>{i+1}日</option>)}
-                                    </select>
-                                    <select value={inputConfig.birthHourIdx} onChange={e=>setInputConfig({...inputConfig, birthHourIdx: parseInt(e.target.value)})} className="bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm outline-none text-center">
-                                        {["子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥"].map((t,i)=><option key={i} value={i}>{t}時</option>)}
-                                    </select>
-                                </div>
+[USER PROFILE]
+- Gender: ${input.gender === 'M' ? '男' : '女'}
+- Age: ${age} 歲 (虛歲)
+- Target Year: ${targetYear}
 
-                                <div className="flex gap-2">
-                                    <button onClick={()=>setInputConfig({...inputConfig, gender:'M'})} className={`flex-1 py-3 rounded-lg border text-sm font-bold transition-all ${inputConfig.gender==='M'?'bg-blue-600 border-blue-500 text-white':'bg-slate-800 border-slate-700 text-slate-500'}`}>乾造 (男)</button>
-                                    <button onClick={()=>setInputConfig({...inputConfig, gender:'F'})} className={`flex-1 py-3 rounded-lg border text-sm font-bold transition-all ${inputConfig.gender==='F'?'bg-pink-600 border-pink-500 text-white':'bg-slate-800 border-slate-700 text-slate-500'}`}>坤造 (女)</button>
-                                </div>
+[ANALYSIS DATA START]
+${JSON.stringify(data, null, 2)}
+[ANALYSIS DATA END]
 
-                                <button 
-                                    onClick={runAnalysis} 
-                                    disabled={!isCoreLoaded || isCalculating}
-                                    className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 disabled:opacity-50 text-white font-bold py-4 rounded-xl shadow-lg shadow-purple-900/30 flex items-center justify-center gap-2 text-lg transition-all mt-6"
-                                >
-                                    {isCalculating ? <Icons.Loader2 className="animate-spin"/> : <Icons.CloudLightning/>}
-                                    {isCalculating ? '推演天機中...' : '開始深度推演'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                );
-            }
+# Report Structure (${pConfig.focus}):
 
-            const displayPalaces = results.chart.palaces.map(p => {
-                const dP = results.decade?.palaces?.find(dp => dp.index === p.index);
-                const yP = results.yearly?.palaces?.find(yp => yp.index === p.index);
-                return { ...p, decadeStars: dP?.decadeStars, decadeName: dP?.decadeName, yearlyStars: yP?.yearlyStars, yearlyName: yP?.yearlyName, palaceStem: p.stem };
-            });
+## 1. ${persona === 'business' ? '核心競爭力與本質分析' : '內在靈魂與本質解析'} (The Core DNA)
+* 引用 'Natal' 數據，分析命主性格優勢 (Traits)。
+* **關鍵格局**: 判斷 'patterns' 中的格局是否成形 (Stability)，這決定了命主的${persona === 'business' ? '抗壓與執行力' : '內在韌性'}。
+* **五行地氣**: 參考 'elementalAnalysis'，解釋命主與環境的相容性。
 
-            const gridMap = [
-                { pos: 'col-start-2 row-start-4', idx: 0 }, { pos: 'col-start-1 row-start-4', idx: 1 },
-                { pos: 'col-start-1 row-start-3', idx: 2 }, { pos: 'col-start-1 row-start-2', idx: 3 },
-                { pos: 'col-start-1 row-start-1', idx: 4 }, { pos: 'col-start-2 row-start-1', idx: 5 },
-                { pos: 'col-start-3 row-start-1', idx: 6 }, { pos: 'col-start-4 row-start-1', idx: 7 },
-                { pos: 'col-start-4 row-start-2', idx: 8 }, { pos: 'col-start-4 row-start-3', idx: 9 },
-                { pos: 'col-start-4 row-start-4', idx: 10 }, { pos: 'col-start-3 row-start-4', idx: 11 }
-            ];
+## 2. 十年大運${persona === 'business' ? '戰略佈局' : '生命主題'} (${data.trend?.decadeRange || ''})
+* **核心主題**: 根據 'theme'，解釋這十年的重心 (如：${strategy})。
+* **機會與代價**: 根據 'causality' (因果路徑)，指出能量最終消耗在哪裡 (Outcome)。
+* ${pConfig.structure_hint}
 
-            return (
-                <div className="h-screen flex flex-col md:flex-row overflow-hidden bg-slate-950 fade-in">
-                    <div className="md:w-16 h-16 md:h-screen bg-slate-900 border-r border-slate-800 flex md:flex-col items-center justify-between p-4 shrink-0 z-50">
-                        <button onClick={()=>setView('input')} className="p-3 bg-slate-800 rounded-xl hover:bg-slate-700 transition text-slate-400 hover:text-white" title="重新輸入"><Icons.RotateCcw className="w-5 h-5"/></button>
-                        <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center font-bold text-white text-xs">紫</div>
-                    </div>
+## 3. ${targetYear} 流年實戰對策 (Yearly Execution)
+* **年度疊宮解析**: 解釋流命疊在什麼位置 (Flow theme)，這代表什麼環境氣數？
+* **⚠️ 風險預警 (關鍵)**: 檢查 'resonanceRisk'。若有「雙忌」或「祿忌沖」，請務必用${persona === 'counseling' ? '溫柔但堅定' : '紅字醒目'}的方式提出警告。
+* **🌊 流月波動**: 掃描 'monthlyRaw'，特別指出哪 1-2 個月份需要特別注意 (化忌沖之月份)。
+* **具體建議**: 給出 3 項${persona === 'business' ? '可執行的商業行動' : '心靈成長練習'}。
 
-                    <div className="flex-1 flex flex-col overflow-hidden relative">
-                        <div className="absolute top-4 right-4 z-20 flex gap-2">
-                            <label className="flex items-center gap-1 bg-slate-900/80 px-3 py-1 rounded-full border border-slate-700 text-xs cursor-pointer"><input type="checkbox" checked={layers.natal} onChange={()=>setLayers(p=>({...p, natal:!p.natal}))} /> 本命</label>
-                            <label className="flex items-center gap-1 bg-slate-900/80 px-3 py-1 rounded-full border border-slate-700 text-xs cursor-pointer"><input type="checkbox" checked={layers.decade} onChange={()=>setLayers(p=>({...p, decade:!p.decade}))} /> 大限</label>
-                            <label className="flex items-center gap-1 bg-slate-900/80 px-3 py-1 rounded-full border border-slate-700 text-xs cursor-pointer"><input type="checkbox" checked={layers.yearly} onChange={()=>setLayers(p=>({...p, yearly:!p.yearly}))} /> 流年</label>
-                        </div>
-
-                        <div className="flex-1 p-4 md:p-8 overflow-y-auto flex items-center justify-center">
-                            <div className="grid grid-cols-4 grid-rows-4 gap-2 aspect-square h-full max-h-[800px] w-full max-w-[800px]">
-                                <div className="col-start-2 row-start-2 col-span-2 row-span-2 bg-slate-900/50 border border-slate-800 rounded-2xl flex flex-col justify-center items-center p-4 relative overflow-hidden backdrop-blur-sm">
-                                    <div className="relative z-10 text-center">
-                                        <h2 className="text-3xl font-bold text-white mb-2">{inputConfig.birthYear}</h2>
-                                        <div className="text-purple-400 text-sm tracking-widest uppercase">{results.chart.bureau?.name} · {inputConfig.gender==='M'?'乾造':'坤造'}</div>
-                                        <div className="mt-6 pt-6 border-t border-slate-700/50 w-full">
-                                            <div className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">STRATEGIC THEME</div>
-                                            <div className="text-blue-300 font-bold text-sm px-4">{results.flow?.theme?.focus}</div>
-                                        </div>
-                                    </div>
-                                    <div className="absolute inset-0 opacity-20 pointer-events-none">
-                                        <ResponsiveContainer><RadarChart data={results.natal.scores.map(s=>({v:s.score}))}><RadarArea dataKey="v" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.5}/></RadarChart></ResponsiveContainer>
-                                    </div>
-                                </div>
-
-                                {gridMap.map((cell) => (
-                                    <div key={cell.idx} className={`${cell.pos} min-h-0`}>
-                                        <PalaceCard 
-                                            palace={displayPalaces[cell.idx]}
-                                            isSelected={selectedPalaceIndex === cell.idx}
-                                            layers={layers}
-                                            activeRisks={results.flow.resonanceRisk}
-                                            onClick={()=>setSelectedPalaceIndex(cell.idx)}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="w-full md:w-96 bg-slate-900 border-l border-slate-800 flex flex-col shadow-2xl z-30">
-                        <div className="h-1/3 min-h-[250px] border-b border-slate-800 p-4 shrink-0 bg-slate-900/50">
-                            <TacticalMap report={report} />
-                        </div>
-                        <div className="flex-1 overflow-hidden">
-                            <ReportPanel 
-                                selectedPalace={results.chart.palaces[selectedPalaceIndex]}
-                                natalResult={results.natal}
-                                flowResult={results.flow}
-                                report={report}
-                                dict={coreRef.current.Dict}
-                            />
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+# Conclusion
+給予一句${persona === 'business' ? '戰略指導原則' : '充滿力量的祝福'} (Motto)。
+`.trim();
+        }
     </script>
 </body>
 </html>
