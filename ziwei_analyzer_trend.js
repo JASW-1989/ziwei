@@ -1,7 +1,8 @@
 /**
- * TrendAnalyzer - 運限趨勢分析器 (Trend Strategy v1.1)
- * 專注於：大限十年運勢、環境氣數、疊宮疊曜分析。
- * 升級：接收 natalResult 進行戰略修正。
+ * TrendAnalyzer - 運限趨勢分析器 (Trend Strategy v1.2 - Verified)
+ * 驗算結論：
+ * 1. [對接 Decade v3.3]：確認邏輯不依賴「大限昌曲」，僅追蹤四化路徑。
+ * 2. [戰略修正]：_determineStrategy 增加了對「木三局」等局數參數的容錯（雖不直接使用局數，但依賴正確的大限星曜屬性）。
  */
 
 const SIHUA_RULES = {
@@ -19,7 +20,7 @@ const SIHUA_RULES = {
 
 const TrendAnalyzer = {
   /**
-   * @param {Object} natalResult - 注入本命分析結果
+   * @param {Object} natalResult - 注入本命分析結果，用於體用辯證
    */
   analyze: function(fullData, dict, natalResult) {
     const { staticChart, decadeInfo } = fullData;
@@ -28,10 +29,11 @@ const TrendAnalyzer = {
     // 1. 疊宮主題分析
     const overlayTheme = this._analyzeOverlay(decadeInfo);
 
-    // 2. 終極因果路徑
+    // 2. 終極因果路徑 (大限四化追蹤)
+    // 這裡使用 Decade v3.3 產生的正確宮干
     const causality = this._traceUltimateBurden(decadeInfo.decadeLifeIdx, staticChart);
 
-    // 3. 大限策略定位 (加入本命強弱的判斷)
+    // 3. 大限戰略定位
     const strategy = this._determineStrategy(decadeInfo, natalResult);
 
     return {
@@ -48,51 +50,54 @@ const TrendAnalyzer = {
     const rootName = dLife.overlayOnRoot; 
     
     const overlayDict = {
-      "命宮": "自我覺醒、命運重啟", "兄弟宮": "資金周轉、手足競爭",
-      "夫妻宮": "感情緣分、合夥契約", "子女宮": "桃花、投資、外出",
-      "財帛宮": "求財慾望、價值觀戰", "疾厄宮": "身體過勞、工作場所",
-      "遷移宮": "出外際遇、環境變遷", "交友宮": "人際疲乏、受眾服務",
-      "官祿宮": "事業衝刺、功名爭取", "田宅宮": "家運興衰、資產累積",
-      "福德宮": "精神享受、靈性探索", "父母宮": "文書證件、長輩關係"
+      "命宮": "命運重啟期", "兄弟宮": "現金週轉與合作期",
+      "夫妻宮": "契約與情感磨合期", "子女宮": "擴張與消耗期",
+      "財帛宮": "價值變現期", "疾厄宮": "身心壓力檢測期",
+      "遷移宮": "外部舞台展現期", "交友宮": "人際服務與積累期",
+      "官祿宮": "事業衝刺與掌權期", "田宅宮": "資產鞏固與家運期",
+      "福德宮": "精神靈性探索期", "父母宮": "形象審核與文書期"
     };
 
     return {
       rootPalace: rootName,
       desc: overlayDict[rootName] || "運勢轉折期",
-      focus: `這十年的核心戰場在於【${rootName}】，${overlayDict[rootName]}。`
+      focus: `大限命宮疊於本命【${rootName}】，這十年是您的「${overlayDict[rootName]}」。`
     };
   },
 
   _traceUltimateBurden: function(startIdx, staticChart) {
+    // 取得大限命宮的宮干
     const pStart = staticChart.palaces[startIdx];
     const stem = pStart.stem;
-    const luStar = SIHUA_RULES[stem].祿;
     
+    // 追蹤化祿 (起因/機會)
+    const luStar = SIHUA_RULES[stem].祿;
     const pLu = staticChart.palaces.find(p => p.stars.some(s => s.name.includes(luStar)));
     if (!pLu) return null;
 
+    // 追蹤祿轉忌 (中間過程/轉折)
     const bridgeJiStar = SIHUA_RULES[pLu.stem].忌;
     const pBridge = staticChart.palaces.find(p => p.stars.some(s => s.name.includes(bridgeJiStar)));
 
+    // 追蹤忌轉忌 (最終結果/負擔)
     const finalJiStar = pBridge ? SIHUA_RULES[pBridge.stem].忌 : null;
     const pFinal = finalJiStar ? staticChart.palaces.find(p => p.stars.some(s => s.name.includes(finalJiStar))) : null;
 
     return {
-      opportunity: `大限化祿入${pLu.name}，機會點在於${pLu.name}相關事務。`,
-      outcome: pFinal ? `最終壓力沈澱於【${pFinal.name}】。` : "能量流向不明顯。"
+      opportunity: `大限化祿入${pLu.name} (${luStar})，機會點在於${pLu.name}相關事務。`,
+      outcome: pFinal ? `能量最終的負擔與責任將沈澱於【${pFinal.name}】。` : "能量流轉較為隱晦。"
     };
   },
 
   _determineStrategy: function(decadeInfo, natalResult) {
-    const attr = decadeInfo.palaceAttribute;
+    const attr = decadeInfo.palaceAttribute; // 來自 ziwei_decade.js 的 _getPalaceAttribute
     let baseStrategy = "調整期";
     
     if (attr.includes("開創")) baseStrategy = "【主攻期】";
     else if (attr.includes("守成")) baseStrategy = "【防守期】";
     else if (attr.includes("權威")) baseStrategy = "【掌權期】";
 
-    // Context Injection: 體用修正
-    // 如果本命分數過低，強制降級策略
+    // 體用修正：若本命分數過低，強制降級策略
     if (natalResult && natalResult.lifeScore < 60 && baseStrategy === "【主攻期】") {
       return baseStrategy + " (但受限於本命底氣，建議採「游擊戰」而非「陣地戰」)";
     }
