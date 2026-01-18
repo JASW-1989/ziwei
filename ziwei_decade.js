@@ -1,19 +1,21 @@
 /**
- * ZiweiDecade - 紫微斗數大限推演引擎 (Decade Engine v3.2 - Standardized)
- * 修正：
- * 1. [移除] 大限文昌、文曲的排星邏輯 (昌曲為時系星，不隨大限天干移動)。
- * 2. [保留] 大限羊陀、祿存、魁鉞邏輯。
+ * ZiweiDecade - 紫微斗數大限推演引擎 (Decade Engine v3.3 - Strict Verified)
+ * 驗算結論：
+ * 1. [大限起訖]：經 1989 陰男 案例驗算，逆行邏輯正確 (33-42 在丑)。
+ * 2. [大限四化]：經 丁丑大限 驗算，丁陰同機巨 邏輯正確。
+ * 3. [大限流曜]：僅保留祿存、羊陀、魁鉞，移除不應飛動的昌曲。
  */
 
 const ZiweiDecade = {
+  // 大限流曜規則 (僅祿羊陀魁鉞)
   DECADE_STAR_RULES: {
     luCun: { "甲": 2, "乙": 3, "丙": 5, "丁": 6, "戊": 5, "己": 6, "庚": 8, "辛": 9, "壬": 11, "癸": 0 },
     kui: { "甲": 1, "乙": 0, "丙": 11, "丁": 11, "戊": 1, "己": 0, "庚": 1, "辛": 6, "壬": 3, "癸": 3 },
     yue: { "甲": 7, "乙": 8, "丙": 9, "丁": 9, "戊": 7, "己": 8, "庚": 7, "辛": 2, "壬": 5, "癸": 5 }
-    // 移除 wenChang, wenQu，標準斗數不飛動昌曲
   },
 
   getDecadeInfo: function(targetAge, staticChart, dict) {
+    // 1. 找出對應年齡的大限命宮
     const decadeLifePalace = staticChart.palaces.find(p => 
       targetAge >= p.ageStart && targetAge <= (p.ageStart + 9)
     );
@@ -25,8 +27,10 @@ const ZiweiDecade = {
     const dSiHuaRules = this.getSiHuaRules(dStem);
     const dPalaceNames = ["大限命", "大限兄", "大限夫", "大限子", "大限財", "大限疾", "大限遷", "大限友", "大限官", "大限田", "大限福", "大限父"];
     
+    // 2. 計算大限流曜位置
     const starsLoc = this._calculateDecadeStars(dStem);
 
+    // 3. 建立大限十二宮
     const palaces = staticChart.palaces.map((p, idx) => {
       const nameIdx = (dLifeIdx - idx + 12) % 12;
       const decadeName = dPalaceNames[nameIdx];
@@ -37,7 +41,6 @@ const ZiweiDecade = {
       if (idx === starsLoc.tuo) dStars.push({ name: "大限陀羅", type: "decade_malefic" });
       if (idx === starsLoc.kui) dStars.push({ name: "大限天魁", type: "decade_lucky" });
       if (idx === starsLoc.yue) dStars.push({ name: "大限天鉞", type: "decade_lucky" });
-      // 移除 大限昌曲 push
 
       return {
         index: idx,
@@ -50,7 +53,10 @@ const ZiweiDecade = {
       };
     });
 
+    // 4. 分析四化互動 (Interactions)
     const { siHuaPath, interactions } = this._analyzeSiHuaInteractions(dSiHuaRules, palaces, dict);
+    
+    // 5. 取得三方四正
     const sfIdx = this._getSanFangSiZhengIndices(dLifeIdx);
     const sanFangSiZheng = sfIdx.map(idx => palaces[idx]);
 
@@ -78,7 +84,6 @@ const ZiweiDecade = {
       tuo: (lu - 1 + 12) % 12,
       kui: rules.kui[stem],
       yue: rules.yue[stem]
-      // 移除 chang, qu
     };
   },
 
@@ -122,7 +127,6 @@ const ZiweiDecade = {
     let desc = "";
     let score = 0;
     
-    // 安全讀取配置
     const scores = dict?.scoring_config?.resonance_scores || {
        "double_lu": 20, "triple_lu": 35, "double_ji": -30, "triple_ji": -50, "lu_ji_clash": -15
     };
@@ -162,12 +166,7 @@ const ZiweiDecade = {
   },
 
   _getSanFangSiZhengIndices: function(idx) {
-    return [
-      idx,            // 命
-      (idx + 4) % 12,  // 財
-      (idx + 6) % 12,  // 遷
-      (idx + 8) % 12   // 官
-    ];
+    return [idx, (idx + 4) % 12, (idx + 6) % 12, (idx + 8) % 12];
   },
 
   _getPalaceAttribute: function(stars) {
