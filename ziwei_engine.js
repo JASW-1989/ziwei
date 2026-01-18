@@ -1,8 +1,8 @@
 /**
- * ZiweiEngine - 紫微斗數靜態核心引擎 (v8.2 - Fixed & Extended)
+ * ZiweiEngine - 紫微斗數靜態核心引擎 (v8.3 - Critical Fix)
  * 修正記錄：
- * 1. [新增] 乙級星曜邏輯：紅鸞、天喜、天刑、天姚、孤辰、寡宿。
- * 2. [定義] 擴充 STAR_DEFINITIONS 支援乙級星。
+ * 1. [嚴重修正] 廢除不可靠的五行局速算公式，改用完整的「六十甲子納音」查表法，確保「戊辰」必為「木三局」。
+ * 2. [校準] 修正紫微星起星公式，確保針對「餘數」的處理符合正統安星法。
  */
 
 const ZiweiEngine = {
@@ -19,9 +19,8 @@ const ZiweiEngine = {
     "戌": { element: "土", type: "陽" }, "亥": { element: "水", type: "陽" }
   },
 
-  // 星曜基本屬性定義 (Key-based)
+  // 星曜基本屬性定義
   STAR_DEFINITIONS: {
-    // 14 主星
     "紫微": { element: "土", type: "major" }, "天機": { element: "木", type: "major" },
     "太陽": { element: "火", type: "major" }, "武曲": { element: "金", type: "major" },
     "天同": { element: "水", type: "major" }, "廉貞": { element: "火", type: "major" },
@@ -29,16 +28,13 @@ const ZiweiEngine = {
     "貪狼": { element: "木", type: "major" }, "巨門": { element: "水", type: "major" },
     "天相": { element: "水", type: "major" }, "天梁": { element: "土", type: "major" },
     "七殺": { element: "金", type: "major" }, "破軍": { element: "水", type: "major" },
-    // 吉星
     "文昌": { element: "金", type: "lucky" }, "文曲": { element: "水", type: "lucky" },
     "左輔": { element: "土", type: "lucky" }, "右弼": { element: "水", type: "lucky" },
     "天魁": { element: "火", type: "lucky" }, "天鉞": { element: "火", type: "lucky" },
     "祿存": { element: "土", type: "lucky" }, "天馬": { element: "火", type: "lucky" },
-    // 煞星
     "擎羊": { element: "金", type: "malefic" }, "陀羅": { element: "金", type: "malefic" },
     "火星": { element: "火", type: "malefic" }, "鈴星": { element: "火", type: "malefic" },
     "地空": { element: "火", type: "malefic" }, "地劫": { element: "火", type: "malefic" },
-    // 新增乙級/雜曜
     "紅鸞": { element: "水", type: "romance" }, "天喜": { element: "水", type: "romance" },
     "天姚": { element: "水", type: "minor_malefic" }, "天刑": { element: "火", type: "minor_malefic" },
     "孤辰": { element: "火", type: "minor_malefic" }, "寡宿": { element: "火", type: "minor_malefic" }
@@ -61,82 +57,98 @@ const ZiweiEngine = {
     "破軍": ["M", "W", "X", "X", "W", "X", "M", "W", "X", "X", "W", "X"]
   },
 
-  /**
-   * 1. 曆法預處理邏輯 (解決閏月與子時)
-   * @param {Object} input - 原始輸入資料 (含 birthMonth, birthDay, hourIdx, isLeap)
-   * @returns {Object} 修正後的農曆日期與月份
-   */
   _processCalendar: function(input) {
     let { month: birthMonth, day: birthDay, isLeap, hourIdx } = input;
-    
-    // A. 處理閏月 (月中分界法)
     let effectiveMonth = birthMonth;
     if (isLeap && birthDay > 15) {
       effectiveMonth = (birthMonth % 12) + 1;
     }
-
-    // B. 處理子時 (23:00 - 01:00)
-    // 若為晚子時 (hourIdx=0, 但原始時間為23:00-00:00)，日期需加一
-    // 此處假設傳入之 birthDay 已由外部曆法庫根據子時進位處理完畢
     let effectiveDay = birthDay;
-
-    return {
-      effectiveMonth,
-      effectiveDay,
-      hourIdx
-    };
+    return { effectiveMonth, effectiveDay, hourIdx };
   },
 
-  // 2. 定命身宮
   locateLifeBody: function(lunarMonth, hourIdx) {
-    const yinIdx = 2; // 寅宮起正月
+    const yinIdx = 2; 
     return {
       lifeIdx: (yinIdx + (lunarMonth - 1) - hourIdx + 12) % 12,
       bodyIdx: (yinIdx + (lunarMonth - 1) + hourIdx) % 12
     };
   },
 
-  // 3. 五虎遁 (求宮干)
   getPalaceStems: function(yearStem) {
     const startMap = { "甲": 2, "己": 2, "乙": 4, "庚": 4, "丙": 6, "辛": 6, "丁": 8, "壬": 8, "戊": 0, "癸": 0 };
     let ziStemIdx = (startMap[yearStem] - 2 + 10) % 10;
     return Array.from({ length: 12 }, (_, i) => this.STEMS[(ziStemIdx + i) % 10]);
   },
 
-  // 4. 五行局
+  // [修正] 五行局計算：改用納音查表法
   getFiveElementsBureau: function(stem, branch) {
-    const stemValue = { "甲": 1, "乙": 1, "丙": 2, "丁": 2, "戊": 3, "己": 3, "庚": 4, "辛": 4, "壬": 5, "癸": 5 };
-    const branchValue = { "子": 1, "丑": 1, "午": 1, "未": 1, "寅": 2, "卯": 2, "申": 2, "酉": 2, "辰": 3, "巳": 3, "戌": 3, "亥": 3 };
-    let sum = stemValue[stem] + branchValue[branch];
-    if (sum > 5) sum -= 5;
+    const naYinMap = {
+      "甲子": 4, "乙丑": 4, "丙寅": 3, "丁卯": 3, "戊辰": 3, "己巳": 3, "庚午": 5, "辛未": 5, "壬申": 4, "癸酉": 4, "甲戌": 3, "乙亥": 3,
+      "丙子": 2, "丁丑": 2, "戊寅": 5, "己卯": 5, "庚辰": 4, "辛巳": 4, "壬午": 3, "癸未": 3, "甲申": 2, "乙酉": 2, "丙戌": 5, "丁亥": 5,
+      "戊子": 3, "己丑": 3, "庚寅": 3, "辛卯": 3, "壬辰": 2, "癸巳": 2, "甲午": 4, "乙未": 4, "丙申": 3, "丁酉": 3, "戊戌": 3, "己亥": 3,
+      "庚子": 5, "辛丑": 5, "壬寅": 4, "癸卯": 4, "甲辰": 6, "乙巳": 6, "丙午": 2, "丁未": 2, "戊申": 5, "己酉": 5, "庚戌": 4, "辛亥": 4,
+      "壬子": 3, "癸丑": 3, "甲寅": 2, "乙卯": 2, "丙辰": 5, "丁巳": 5, "戊午": 6, "己未": 6, "庚申": 3, "辛酉": 3, "壬戌": 2, "癸亥": 2
+    };
+
+    const key = stem + branch;
+    const val = naYinMap[key] || 3; // 預設木三局防呆
     
     const bureauMap = { 
-      1: { name: "金四局", value: 4 }, 
+      4: { name: "金四局", value: 4 }, 
       2: { name: "水二局", value: 2 }, 
-      3: { name: "火六局", value: 6 }, 
-      4: { name: "土五局", value: 5 }, 
-      5: { name: "木三局", value: 3 } 
+      6: { name: "火六局", value: 6 }, 
+      5: { name: "土五局", value: 5 }, 
+      3: { name: "木三局", value: 3 } 
     };
-    return bureauMap[sum];
+    return bureauMap[val];
   },
 
-  // 5. 起紫微星 (精密公式)
+  // [修正] 紫微星定位公式 (確保處理餘數邏輯正確)
   locateZiweiStar: function(bureauValue, lunarDay) {
-    let q = Math.ceil(lunarDay / bureauValue);
-    let r = (q * bureauValue) - lunarDay;
-    let basePos = (2 + (q - 1)) % 12;
-    return (r % 2 === 0) ? (basePos + r) % 12 : (basePos - r + 12) % 12;
+    // 算法：生日 / 局數
+    // 若整除：商數即為位置
+    // 若不整除：需借數 (bureauValue - rem)
+    // 借數為奇數：商數+1 的位置逆行 (Borrow)
+    // 借數為偶數：商數+1 的位置順行 (Borrow)
+    
+    let quotient = Math.floor(lunarDay / bureauValue);
+    let remainder = lunarDay % bureauValue;
+    
+    let finalPos; // 相對於寅宮(Index 2)的位移
+
+    if (remainder === 0) {
+      // 整除：位置 = 商數 - 1 (因為寅宮是1)
+      finalPos = quotient - 1;
+    } else {
+      // 不整除
+      let borrow = bureauValue - remainder;
+      let nextQuotient = quotient + 1; // 實際上用的商是下一個倍數
+      
+      if (borrow % 2 !== 0) {
+        // 借數為奇數：逆數
+        // 公式：商 - 借
+        finalPos = (nextQuotient - borrow) - 1;
+      } else {
+        // 借數為偶數：順數
+        // 公式：商 + 借
+        finalPos = (nextQuotient + borrow) - 1;
+      }
+    }
+
+    // 加上起始點 寅宮(Index 2)
+    // 處理負數與超過 11 的情況
+    let ziweiIdx = (2 + finalPos) % 12;
+    if (ziweiIdx < 0) ziweiIdx += 12;
+
+    return ziweiIdx;
   },
 
-  // 6. 安星主邏輯
   _getStarMapping: function(ziweiIdx, input, lunarMonth) {
     const starPalaces = Array(12).fill(null).map(() => []);
     const { yearStem, yearBranch, hourIdx } = input;
-    
-    // 將 yearBranch 轉為 index (0-11)
     const yearBranchIdx = this.BRANCHES.indexOf(yearBranch);
 
-    // 定義安星 Helper
     const addStar = (idx, starName) => {
       const def = this.STAR_DEFINITIONS[starName] || { element: "土", type: "misc" };
       starPalaces[idx % 12].push({
@@ -149,33 +161,31 @@ const ZiweiEngine = {
       });
     };
 
-    // --- A. 紫微星系 ---
+    // A. 紫微星系
     const zwPath = [0, -1, null, -3, -4, -5, null, null, -8];
     ["紫微", "天機", null, "太陽", "武曲", "天同", null, null, "廉貞"].forEach((s, i) => {
       if (s) addStar(ziweiIdx + (zwPath[i] || 0) + 12, s);
     });
 
-    // --- B. 天府星系 ---
+    // B. 天府星系
     const tfIdx = (4 - ziweiIdx + 12) % 12;
     ["天府", "太陰", "貪狼", "巨門", "天相", "天梁", "七殺", null, null, null, "破軍"].forEach((s, i) => {
       if (s) addStar(tfIdx + i, s);
     });
 
-    // --- C. 月系星 (使用有效月份 lunarMonth) ---
+    // C. 月系星
     addStar(4 + (lunarMonth - 1), "左輔");
     addStar(10 - (lunarMonth - 1) + 12, "右弼");
-    // [新增] 天刑: 酉宮(9)起正月，順行
     addStar(9 + (lunarMonth - 1), "天刑");
-    // [新增] 天姚: 丑宮(1)起正月，順行
     addStar(1 + (lunarMonth - 1), "天姚");
 
-    // --- D. 時系星 ---
+    // D. 時系星
     addStar(4 + hourIdx, "文曲");
     addStar(10 - hourIdx + 12, "文昌");
     addStar(11 + hourIdx, "地劫");
     addStar(11 - hourIdx + 12, "地空");
 
-    // --- E. 年干系星 ---
+    // E. 年干系星
     const luCunMap = { "甲": 2, "乙": 3, "丙": 5, "丁": 6, "戊": 5, "己": 6, "庚": 8, "辛": 9, "壬": 11, "癸": 0 };
     const luIdx = luCunMap[yearStem];
     addStar(luIdx, "祿存");
@@ -187,7 +197,7 @@ const ZiweiEngine = {
     addStar(kui, "天魁");
     addStar(yue, "天鉞");
 
-    // 四化處理
+    // 四化
     const siHuaRules = {
       "甲": { "廉貞": "祿", "破軍": "權", "武曲": "科", "太陽": "忌" },
       "乙": { "天機": "祿", "天梁": "權", "紫微": "科", "太陰": "忌" },
@@ -211,30 +221,24 @@ const ZiweiEngine = {
       });
     });
 
-    // --- F. 年支系星 ---
-    // 火鈴 (依年支 + 時支)
+    // F. 年支系
     const fireBase = { "寅": 1, "午": 1, "戌": 1, "申": 2, "子": 2, "辰": 2, "巳": 3, "酉": 3, "丑": 3, "亥": 9, "卯": 9, "未": 9 };
     const bellBase = { "寅": 3, "午": 3, "戌": 3, "申": 10, "子": 10, "辰": 10, "巳": 10, "酉": 10, "丑": 10, "亥": 10, "卯": 10, "未": 10 };
     addStar(fireBase[yearBranch] + hourIdx, "火星");
     addStar(bellBase[yearBranch] + hourIdx, "鈴星");
 
-    // 天馬 (依年支)
     const maMap = { "寅": 8, "午": 8, "戌": 8, "申": 2, "子": 2, "辰": 2, "巳": 11, "酉": 11, "丑": 11, "亥": 5, "卯": 5, "未": 5 };
     addStar(maMap[yearBranch], "天馬");
 
-    // [新增] 紅鸞/天喜: 卯(3)起子年，逆行
-    // 公式: (3 - yearBranchIdx + 12) % 12
     const luanIdx = (3 - yearBranchIdx + 12) % 12;
     addStar(luanIdx, "紅鸞");
-    addStar(luanIdx + 6, "天喜"); // 天喜必在對宮
+    addStar(luanIdx + 6, "天喜");
 
-    // [新增] 孤辰/寡宿 (三會方局)
-    // 亥子丑(水) -> 寅/戌, 寅卯辰(木) -> 巳/丑, 巳午未(火) -> 申/辰, 申酉戌(金) -> 亥/未
     let guIdx, guaIdx;
-    if (["亥", "子", "丑"].includes(yearBranch)) { guIdx = 2; guaIdx = 10; } // 寅, 戌
-    else if (["寅", "卯", "辰"].includes(yearBranch)) { guIdx = 5; guaIdx = 1; } // 巳, 丑
-    else if (["巳", "午", "未"].includes(yearBranch)) { guIdx = 8; guaIdx = 4; } // 申, 辰
-    else { guIdx = 11; guaIdx = 7; } // 申酉戌 -> 亥, 未
+    if (["亥", "子", "丑"].includes(yearBranch)) { guIdx = 2; guaIdx = 10; } 
+    else if (["寅", "卯", "辰"].includes(yearBranch)) { guIdx = 5; guaIdx = 1; }
+    else if (["巳", "午", "未"].includes(yearBranch)) { guIdx = 8; guaIdx = 4; } 
+    else { guIdx = 11; guaIdx = 7; }
 
     addStar(guIdx, "孤辰");
     addStar(guaIdx, "寡宿");
@@ -248,21 +252,17 @@ const ZiweiEngine = {
     return brightnessMap[this.BRIGHTNESS_DB[starName][branchIdx]] || "平";
   },
 
-  /**
-   * 生成完整盤面數據
-   * @param {Object} rawInput - 包含 yearStem, yearBranch, month, day, hourIdx, gender, isLeap
-   */
   getFullChart: function(rawInput) {
-    // 曆法預處理
     const { effectiveMonth, effectiveDay, hourIdx } = this._processCalendar(rawInput);
     const { yearStem, yearBranch, gender } = rawInput;
 
     const { lifeIdx, bodyIdx } = this.locateLifeBody(effectiveMonth, hourIdx);
     const stems = this.getPalaceStems(yearStem);
+    // 使用新的五行局計算
     const bureau = this.getFiveElementsBureau(stems[lifeIdx], this.BRANCHES[lifeIdx]);
+    // 使用新的紫微定位
     const ziweiIdx = this.locateZiweiStar(bureau.value, effectiveDay);
     
-    // 安星 (傳入 effectiveMonth 作為有效農曆月份)
     const starPalaces = this._getStarMapping(ziweiIdx, rawInput, effectiveMonth);
 
     const palaces = this.BRANCHES.map((branch, idx) => {
@@ -288,9 +288,6 @@ const ZiweiEngine = {
     };
   },
 
-  /**
-   * 9. 大限起訖計算
-   */
   _calculateDecadeRange: function(bureauValue, currentIdx, lifeIdx, yearStem, gender) {
     const isYangStem = ["甲", "丙", "戊", "庚", "壬"].includes(yearStem);
     const isMale = gender === "M";
